@@ -1,4 +1,4 @@
-import ConversationController from '../js/conversation_controller';
+import ConversationController from '../../js/conversation_controller';
 
 /*
 The reason we have window variables declared here and not global.d.ts is because we can't import custom types in global.d.ts.

@@ -1,4 +1,4 @@
-import { Conversation } from './models/conversations';
+import Conversation from './models/conversations';
 
 export interface ConversationController {
   load(): Promise<void>;

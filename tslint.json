@@ -77,6 +77,8 @@
       }
     ],
 
+    "no-unused-variable": [true, { "ignore-pattern": "^_" }],
+
     // Disabling a large set of Microsoft-recommended rules
 
     // Modifying:
