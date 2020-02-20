@@ -2,6 +2,7 @@
 
 import { SignalService as Protobuf } from '../protobuf';
 import { PairingAuthorisation } from './types';
+import { Conversation } from '../../js/models/conversations';
 
 export async function sendOnlineBroadcaseMessage(
   pubKey: string,
@@ -77,7 +78,7 @@ export async function sendUnpairingMessageToSlaveDevice(
 
 // TODO: create a typed definition file for conversation model
 export async function createContactSyncProtoMessage(
-  conversations: [any]
+  conversations: [Conversation]
 ): Promise<Protobuf.SyncMessage | null> {
   const sessionContacts = conversations.filter(
     c => c.isPrivate() && !c.isSecondaryDevice()
@@ -144,17 +145,19 @@ export async function sendPairingAuthorisation(
   if (isGrant) {
     // Send profile name to secondary device
     const lokiProfile = ourConversation.getLokiProfile();
-    // profile.avatar is the path to the local image
-    // replace with the avatar URL
-    const avatarPointer = ourConversation.get('avatarPointer');
-    lokiProfile.avatar = avatarPointer;
-    const profile = new Protobuf.DataMessage.LokiProfile(lokiProfile);
-    const profileKey = window.storage.get('profileKey');
-    const dataMessage = new Protobuf.DataMessage({
-      profile,
-      profileKey,
-    });
-    content.dataMessage = dataMessage;
+    if (lokiProfile) {
+      // profile.avatar is the path to the local image
+      // replace with the avatar URL
+      const avatarPointer = ourConversation.get('avatarPointer');
+      lokiProfile.avatar = avatarPointer;
+      const profile = new Protobuf.DataMessage.LokiProfile(lokiProfile);
+      const profileKey = window.storage.get('profileKey');
+      const dataMessage = new Protobuf.DataMessage({
+        profile,
+        profileKey,
+      });
+      content.dataMessage = dataMessage;
+    }
   }
 
   // Send

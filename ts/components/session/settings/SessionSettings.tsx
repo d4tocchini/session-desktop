@@ -33,7 +33,7 @@ interface State {
   hasPassword: boolean | null;
   pwdLockError: string | null;
   shouldLockSettings: boolean | null;
-  linkedPubKeys: Array<any>;
+  linkedPubKeys: Array<string>;
 }
 
 interface LocalSettingType {
@@ -302,14 +302,10 @@ export class SettingsView extends React.Component<SettingsViewProps, State> {
     }
   }
 
-  private getPubkeyName(pubKey: string | null) {
-    if (!pubKey) {
-      return {};
-    }
-
+  private getPubkeyName(pubKey: string) {
     const secretWords = window.mnemonic.pubkey_to_secret_words(pubKey);
     const conv = window.ConversationController.get(pubKey);
-    const deviceAlias = conv ? conv.getNickname() : 'Unnamed Device';
+    const deviceAlias = (conv && conv.getNickname()) || 'Unnamed Device';
 
     return { deviceAlias, secretWords };
   }
@@ -537,7 +533,7 @@ export class SettingsView extends React.Component<SettingsViewProps, State> {
     const { linkedPubKeys } = this.state;
 
     if (linkedPubKeys && linkedPubKeys.length > 0) {
-      return linkedPubKeys.map((pubkey: any) => {
+      return linkedPubKeys.map((pubkey: string) => {
         const { deviceAlias, secretWords } = this.getPubkeyName(pubkey);
         const description = `${secretWords} ${window.shortenPubkey(pubkey)}`;
 
@@ -602,7 +598,7 @@ export class SettingsView extends React.Component<SettingsViewProps, State> {
 
     window.libloki.storage
       .getSecondaryDevicesFor(ourPubKey)
-      .then((pubKeys: any) => {
+      .then((pubKeys: Array<string>) => {
         this.setState({
           linkedPubKeys: pubKeys,
         });

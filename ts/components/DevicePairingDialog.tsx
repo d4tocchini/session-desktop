@@ -168,6 +168,10 @@ export class DevicePairingDialog extends React.Component<Props, State> {
 
   public renderUnpairDeviceView() {
     const { pubKeyToUnpair } = this.props;
+    if (!pubKeyToUnpair) {
+      return null;
+    }
+
     const secretWords = window.mnemonic.pubkey_to_secret_words(pubKeyToUnpair);
     const conv = window.ConversationController.get(pubKeyToUnpair);
     let description;
@@ -283,9 +287,13 @@ export class DevicePairingDialog extends React.Component<Props, State> {
       window.pushToast({
         title: window.i18n('devicePairedSuccessfully'),
       });
-      const conv = window.ConversationController.get(this.state.currentPubKey);
-      if (conv) {
-        conv.setNickname(this.state.deviceAlias);
+      if (this.state.currentPubKey) {
+        const conv = window.ConversationController.get(
+          this.state.currentPubKey
+        );
+        if (conv) {
+          conv.setNickname(this.state.deviceAlias).ignore();
+        }
       }
 
       return;

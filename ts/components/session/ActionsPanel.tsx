@@ -2,6 +2,7 @@ import React from 'react';
 import { SessionIconButton, SessionIconSize, SessionIconType } from './icon';
 import { Avatar } from '../Avatar';
 import { PropsData as ConversationListItemPropsType } from '../ConversationListItem';
+import Conversation from '../../../js/models/conversations';
 
 export enum SectionType {
   Profile,
@@ -13,7 +14,7 @@ export enum SectionType {
 }
 
 interface State {
-  avatarPath: string;
+  avatarPath: string | undefined;
 }
 
 interface Props {
@@ -38,13 +39,13 @@ export class ActionsPanel extends React.Component<Props, State> {
     // tslint:disable-next-line: no-backbone-get-set-outside-model
     const ourNumber = window.storage.get('primaryDevicePubKey');
 
-    window.ConversationController.getOrCreateAndWait(ourNumber, 'private').then(
-      (conversation: any) => {
+    window.ConversationController.getOrCreateAndWait(ourNumber, 'private')
+      .then((conversation: Conversation) => {
         this.setState({
           avatarPath: conversation.getAvatarPath(),
         });
-      }
-    );
+      })
+      .ignore();
   }
 
   public Section = ({
