@@ -17,7 +17,9 @@ interface Window {
   userConfig: any;
   shortenPubkey: any;
 
-  dcodeIO: any;
+  dcodeIO: {
+    ByteBuffer: typeof ByteBuffer;
+  };
   libsignal: any;
   libloki: any;
   displayNameRegex: any;
@@ -59,6 +61,8 @@ interface Window {
   lokiFeatureFlags: any;
 
   resetDatabase: any;
+
+  StringView: any;
 }
 
 interface Promise<T> {

@@ -49,7 +49,7 @@
     "lint-windows": "yarn eslint && yarn tslint",
     "lint-windows-full": "yarn eslint-full && yarn tslint",
     "lint-deps": "node ts/util/lint/linter.js",
-    "tslint": "tslint --format stylish --project .",
+    "tslint": "tslint --fix --format stylish --project .",
     "format": "prettier --write `git ls-files --modified *.{css,js,json,md,scss,ts,tsx}` `git ls-files --modified ./**/*.{css,js,json,md,scss,ts,tsx}`",
     "format-full": "prettier --write \"*.{css,js,json,md,scss,ts,tsx}\" \"./**/*.{css,js,json,md,scss,ts,tsx}\"",
     "transpile": "tsc",
@@ -134,6 +134,7 @@
     "websocket": "1.0.28"
   },
   "devDependencies": {
+    "@types/bytebuffer": "^5.0.40",
     "@types/chai": "4.1.2",
     "@types/classnames": "2.2.3",
     "@types/color": "^3.0.0",
