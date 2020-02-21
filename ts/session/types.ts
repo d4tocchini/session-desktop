@@ -14,3 +14,18 @@ export interface PreKeyBundle {
   signedKey: Uint8Array;
   signature: Uint8Array;
 }
+
+export interface ContactPreKey {
+  identityKeyString: string;
+  keyId: number;
+  publicKey: ArrayBuffer;
+}
+
+export interface ContactSignedPreKey {
+  identityKeyString: string;
+  keyId: number;
+  publicKey: ArrayBuffer;
+  signature: ArrayBuffer;
+  created_at: number;
+  confirmed: boolean;
+}
