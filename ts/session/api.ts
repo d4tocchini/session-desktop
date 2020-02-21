@@ -1,8 +1,9 @@
 /* tslint:disable: no-backbone-get-set-outside-model */
 
-import { SignalService as Protobuf } from '../protobuf';
+import { SignalService } from '../protobuf';
 import { PairingAuthorisation } from './types';
 import { Conversation } from '../../js/models/conversations';
+import { base64ToArrayBuffer } from '../util/conversion';
 
 export async function sendOnlineBroadcaseMessage(
   pubKey: string,
@@ -16,13 +17,13 @@ export async function sendOnlineBroadcaseMessage(
   }
 
   // We result loki address message for sending "background" messages
-  const lokiAddressMessage = new Protobuf.LokiAddressMessage({
+  const lokiAddressMessage = new SignalService.LokiAddressMessage({
     p2pAddress: null,
     p2pPort: null,
-    type: Protobuf.LokiAddressMessage.Type.HOST_UNREACHABLE,
+    type: SignalService.LokiAddressMessage.Type.HOST_UNREACHABLE,
   });
 
-  const content = new Protobuf.Content({ lokiAddressMessage });
+  const content = new SignalService.Content({ lokiAddressMessage });
   const options: any = { messageType: 'onlineBroadcast', isPing };
 
   // Send a empty message with information about how to contact us directly
@@ -47,22 +48,29 @@ export function createPairingAuthorisationProtoMessage({
   secondaryDevicePubKey,
   requestSignature,
   grantSignature,
-}: PairingAuthorisation): Protobuf.PairingAuthorisationMessage {
-  return new Protobuf.PairingAuthorisationMessage({
+}: PairingAuthorisation): SignalService.PairingAuthorisationMessage {
+  const requestSignatureBuffer = base64ToArrayBuffer(requestSignature);
+  const grantSignatureBuffer = grantSignature
+    ? base64ToArrayBuffer(grantSignature)
+    : null;
+
+  return new SignalService.PairingAuthorisationMessage({
     primaryDevicePubKey,
     secondaryDevicePubKey,
-    requestSignature: new Uint8Array(requestSignature),
-    grantSignature: grantSignature ? new Uint8Array(grantSignature) : null,
+    requestSignature: new Uint8Array(requestSignatureBuffer),
+    grantSignature: grantSignatureBuffer
+      ? new Uint8Array(grantSignatureBuffer)
+      : null,
   });
 }
 
-export async function sendUnpairingMessageToSlaveDevice(
+export async function sendUnpairingMessageToSecondary(
   pubKey: String
 ): Promise<void> {
-  const dataMessage = new Protobuf.DataMessage({
-    flags: Protobuf.DataMessage.Flags.UNPAIRING_REQUEST,
+  const dataMessage = new SignalService.DataMessage({
+    flags: SignalService.DataMessage.Flags.UNPAIRING_REQUEST,
   });
-  const content = new Protobuf.Content({ dataMessage });
+  const content = new SignalService.Content({ dataMessage });
   const options: any = { messageType: 'device-unpairing' };
   const outgoingMessage = new window.textsecure.OutgoingMessage(
     null, // server
@@ -76,10 +84,9 @@ export async function sendUnpairingMessageToSlaveDevice(
   await outgoingMessage.sendToNumber(pubKey);
 }
 
-// TODO: create a typed definition file for conversation model
 export async function createContactSyncProtoMessage(
   conversations: [Conversation]
-): Promise<Protobuf.SyncMessage | null> {
+): Promise<SignalService.SyncMessage | null> {
   const sessionContacts = conversations.filter(
     c => c.isPrivate() && !c.isSecondaryDevice()
   );
@@ -98,7 +105,7 @@ export async function createContactSyncProtoMessage(
       const protoState = window.textsecure.storage.protocol.convertVerifiedStatusToProtoState(
         status
       );
-      const verified = new Protobuf.Verified({
+      const verified = new SignalService.Verified({
         state: protoState,
         destination: number,
         identityKey: window.StringView.hexToArrayBuffer(number),
@@ -118,14 +125,14 @@ export async function createContactSyncProtoMessage(
   // Convert raw contacts to an array of buffers
   const contactDetails = rawContacts
     .filter(x => x.number !== window.textsecure.storage.user.getNumber())
-    .map(x => new Protobuf.ContactDetails(x))
-    .map(x => Protobuf.ContactDetails.encode(x).finish());
+    .map(x => new SignalService.ContactDetails(x))
+    .map(x => SignalService.ContactDetails.encode(x).finish());
 
   const byteBuffer = serialiseByteBuffers(contactDetails);
   const data = new Uint8Array(byteBuffer.toArrayBuffer());
-  const contacts = new Protobuf.SyncMessage.Contacts({ data });
+  const contacts = new SignalService.SyncMessage.Contacts({ data });
 
-  return new Protobuf.SyncMessage({ contacts });
+  return new SignalService.SyncMessage({ contacts });
 }
 
 export async function sendPairingAuthorisation(
@@ -140,7 +147,7 @@ export async function sendPairingAuthorisation(
     ourNumber,
     'private'
   );
-  const content = new Protobuf.Content({ pairingAuthorisation });
+  const content = new SignalService.Content({ pairingAuthorisation });
   const isGrant = authorisation.primaryDevicePubKey === ourNumber;
   if (isGrant) {
     // Send profile name to secondary device
@@ -150,9 +157,9 @@ export async function sendPairingAuthorisation(
       // replace with the avatar URL
       const avatarPointer = ourConversation.get('avatarPointer');
       lokiProfile.avatar = avatarPointer;
-      const profile = new Protobuf.DataMessage.LokiProfile(lokiProfile);
+      const profile = new SignalService.DataMessage.LokiProfile(lokiProfile);
       const profileKey = window.storage.get('profileKey');
-      const dataMessage = new Protobuf.DataMessage({
+      const dataMessage = new SignalService.DataMessage({
         profile,
         profileKey,
       });

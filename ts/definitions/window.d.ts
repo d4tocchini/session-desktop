@@ -71,5 +71,6 @@ declare global {
     resetDatabase: any;
 
     StringView: any;
+    lokiFileServerAPI: any;
   }
 }

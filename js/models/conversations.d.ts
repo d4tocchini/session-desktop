@@ -40,6 +40,10 @@ export interface Conversation extends Backbone.Model {
   getProfileName(): string | null;
   getAvatarPath(): string | undefined;
   safeGetVerified(): Promise<number>;
+  setSecondaryStatus(
+    status: boolean,
+    primaryDevicePubKey: string
+  ): Promise<void>;
 
   // This should be slowly fazed out
   get(key: string): any;

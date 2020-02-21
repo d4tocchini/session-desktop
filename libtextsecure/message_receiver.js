@@ -1070,7 +1070,25 @@ MessageReceiver.prototype.extend({
   },
   async handlePairingAuthorisationMessage(envelope, content) {
     const { pairingAuthorisation } = content;
-    const { secondaryDevicePubKey, grantSignature } = pairingAuthorisation;
+    const {
+      secondaryDevicePubKey,
+      grantSignature,
+      requestSignature,
+    } = pairingAuthorisation;
+
+    // We need to convert signatures into base64 here
+    if (grantSignature) {
+      pairingAuthorisation.grantSignature = Signal.Crypto.arrayBufferToBase64(
+        grantSignature
+      );
+    }
+
+    if (requestSignature) {
+      pairingAuthorisation.requestSignature = Signal.Crypto.arrayBufferToBase64(
+        requestSignature
+      );
+    }
+
     const isGrant =
       grantSignature &&
       secondaryDevicePubKey === textsecure.storage.user.getNumber();
