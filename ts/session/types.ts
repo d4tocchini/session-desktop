@@ -29,3 +29,10 @@ export interface ContactSignedPreKey {
   created_at: number;
   confirmed: boolean;
 }
+
+export interface PairingAuthorisation {
+  primaryDevicePubKey: string;
+  secondaryDevicePubKey: string;
+  requestSignature: string;
+  grantSignature?: string;
+}

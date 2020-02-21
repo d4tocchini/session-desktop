@@ -1,6 +1,12 @@
-import { PreKeyBundle } from './types';
+import { PairingAuthorisation, PreKeyBundle } from './types';
 import { SignalService } from '../protobuf';
-import { PairingAuthorisation } from '../../js/modules/data';
+import {
+  removeContactPreKey,
+  removeContactSignedPreKey,
+  storeContactPreKey,
+  storeContactSignedPreKey,
+} from './protocol';
+import * as Data from '../../js/modules/data';
 
 const timers: { [pubKey: string]: number } = {};
 const REFRESH_DELAY = 60 * 1000;
@@ -38,35 +44,27 @@ export async function saveContactPreKeyBundle({
   signedKey,
   signature,
 }: PreKeyBundle): Promise<void> {
-  const pubKey = window.StringView.arrayBufferToHex(identityKey) as string;
-  const signedPreKey = {
+  const identityKeyString = window.StringView.arrayBufferToHex(
+    identityKey
+  ) as string;
+  const signedKeyPromise = storeContactSignedPreKey({
+    identityKeyString,
     keyId: signedKeyId,
     publicKey: signedKey,
     signature,
-  };
-
-  const signedKeyPromise = window.textsecure.storage.protocol.storeContactSignedPreKey(
-    pubKey,
-    signedPreKey
-  );
-
-  const preKeyObject = {
+  });
+  const preKeyPromise = storeContactPreKey({
+    identityKeyString,
     publicKey: preKey,
     keyId: preKeyId,
-  };
-
-  const preKeyPromise = window.textsecure.storage.protocol.storeContactPreKey(
-    pubKey,
-    preKeyObject
-  );
-
+  });
   await Promise.all([signedKeyPromise, preKeyPromise]);
 }
 
 export async function removeContactPreKeyBundle(pubKey: string): Promise<void> {
   await Promise.all([
-    window.textsecure.storage.protocol.removeContactPreKey(pubKey),
-    window.textsecure.storage.protocol.removeContactSignedPreKey(pubKey),
+    removeContactPreKey(pubKey),
+    removeContactSignedPreKey(pubKey),
   ]);
 }
 
@@ -106,9 +104,7 @@ export async function verifyFriendRequestAcceptPreKey(
 export async function removePairingAuthorisationForSecondaryPubKey(
   pubKey: string
 ): Promise<void> {
-  return window.Signal.Data.removePairingAuthorisationForSecondaryPubKey(
-    pubKey
-  );
+  return Data.removePairingAuthorisationForSecondaryPubKey(pubKey);
 }
 
 export async function getGrantAuthorisationForSecondaryPubKey(
@@ -120,9 +116,7 @@ export async function getGrantAuthorisationForSecondaryPubKey(
   }
   await fetchPairingAuthorisationsFor(secondaryPubKey);
 
-  return window.Signal.Data.getGrantAuthorisationForSecondaryPubKey(
-    secondaryPubKey
-  );
+  return Data.getGrantAuthorisationForSecondaryPubKey(secondaryPubKey);
 }
 
 export async function getAuthorisationForSecondaryPubKey(
@@ -130,11 +124,22 @@ export async function getAuthorisationForSecondaryPubKey(
 ): Promise<PairingAuthorisation | null> {
   await fetchPairingAuthorisationsFor(secondaryPubKey);
 
-  return window.Signal.Data.getAuthorisationForSecondaryPubKey(secondaryPubKey);
+  return Data.getAuthorisationForSecondaryPubKey(secondaryPubKey);
+}
+
+/**
+ * Return all the paired pubkeys for a specific pubkey (excluded), irrespective of their Primary or Secondary status.
+ */
+export async function getPairedDevicesFor(
+  pubkey: string
+): Promise<Array<string>> {
+  return Data.getPairedDevicesFor(pubkey);
 }
 
 // Private
 
+// We don't use window.textsecure.storage.protocol.loadPreKey
+// as this is custom logic for session and how it stores prekeys
 async function loadPreKey(
   pubKey: string
 ): Promise<{ pubKey: any; keyId: number }> {
@@ -219,5 +224,5 @@ async function savePairingAuthorisation(
     true,
     authorisation.primaryDevicePubKey
   );
-  await window.Signal.Data.createOrUpdatePairingAuthorisation(authorisation);
+  await Data.createOrUpdatePairingAuthorisation(authorisation);
 }

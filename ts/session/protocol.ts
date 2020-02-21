@@ -1,13 +1,14 @@
 import { ContactPreKey, ContactSignedPreKey } from './types';
+import * as Data from '../../js/modules/data';
 
 export async function storeContactPreKey(preKey: ContactPreKey) {
-  await window.Signal.Data.createOrUpdateContactPreKey(preKey);
+  await Data.createOrUpdateContactPreKey(preKey);
 }
 
 export async function loadContactPreKey(
   pubKey: string
 ): Promise<ContactPreKey | undefined> {
-  const preKey = await window.Signal.Data.getContactPreKeyByIdentityKey(pubKey);
+  const preKey = await Data.getContactPreKeyByIdentityKey(pubKey);
   if (!preKey) {
     window.log.warn('Failed to fetch contact prekey:', pubKey);
   }
@@ -16,11 +17,11 @@ export async function loadContactPreKey(
 }
 
 export async function removeContactPreKey(pubKey: string): Promise<void> {
-  await window.Signal.Data.removeContactPreKeyByIdentityKey(pubKey);
+  await Data.removeContactPreKeyByIdentityKey(pubKey);
 }
 
 export async function clearContactPreKeysStore(): Promise<void> {
-  await window.Signal.Data.removeAllContactPreKets();
+  await Data.removeAllContactPreKeys();
 }
 
 type PartialContactSignedPreKey = Pick<
@@ -35,15 +36,13 @@ export async function storeContactSignedPreKey(
     confirmed: false,
     ...signedPreKey,
   };
-  await window.Signal.Data.createOrUpdateContactSignedPreKey(key);
+  await Data.createOrUpdateContactSignedPreKey(key);
 }
 
 export async function loadContactSignedPreKey(
   pubKey: string
 ): Promise<ContactSignedPreKey | undefined> {
-  const preKey = await window.Signal.Data.getContactSignedPreKeyByIdentityKey(
-    pubKey
-  );
+  const preKey = await Data.getContactSignedPreKeyByIdentityKey(pubKey);
   if (!preKey) {
     window.log.warn('Failed to fetch contact signed prekey:', pubKey);
   }
@@ -52,9 +51,9 @@ export async function loadContactSignedPreKey(
 }
 
 export async function removeContactSignedPreKey(pubKey: string): Promise<void> {
-  await window.Signal.Data.removeContactSignedPreKeyByIdentityKey(pubKey);
+  await Data.removeContactSignedPreKeyByIdentityKey(pubKey);
 }
 
 export async function clearContactSignedPreKeysStore(): Promise<void> {
-  await window.Signal.Data.removeAllContactSignedPreKeys();
+  await Data.removeAllContactSignedPreKeys();
 }

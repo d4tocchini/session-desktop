@@ -57,19 +57,12 @@ module.exports = {
   removeAllSignedPreKeys,
 
   createOrUpdateContactPreKey,
-  getContactPreKeyById,
   getContactPreKeyByIdentityKey,
-  getContactPreKeys,
-  getAllContactPreKeys,
-  bulkAddContactPreKeys,
   removeContactPreKeyByIdentityKey,
   removeAllContactPreKeys,
 
   createOrUpdateContactSignedPreKey,
-  getContactSignedPreKeyById,
   getContactSignedPreKeyByIdentityKey,
-  getContactSignedPreKeys,
-  bulkAddContactSignedPreKeys,
   removeContactSignedPreKeyByIdentityKey,
   removeAllContactSignedPreKeys,
 
@@ -1253,9 +1246,6 @@ async function createOrUpdateContactPreKey(data) {
     }
   );
 }
-async function getContactPreKeyById(id) {
-  return getById(CONTACT_PRE_KEYS_TABLE, id);
-}
 async function getContactPreKeyByIdentityKey(key) {
   const row = await db.get(
     `SELECT * FROM ${CONTACT_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString ORDER BY keyId DESC LIMIT 1;`,
@@ -1269,18 +1259,6 @@ async function getContactPreKeyByIdentityKey(key) {
   }
 
   return jsonToObject(row.json);
-}
-async function getContactPreKeys(keyId, identityKeyString) {
-  const query = `SELECT * FROM ${CONTACT_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString AND keyId = $keyId;`;
-  const rows = await db.all(query, {
-    $keyId: keyId,
-    $identityKeyString: identityKeyString,
-  });
-  return map(rows, row => jsonToObject(row.json));
-}
-
-async function bulkAddContactPreKeys(array) {
-  return bulkAdd(CONTACT_PRE_KEYS_TABLE, array);
 }
 async function removeContactPreKeyByIdentityKey(key) {
   await db.run(
@@ -1315,9 +1293,6 @@ async function createOrUpdateContactSignedPreKey(data) {
     }
   );
 }
-async function getContactSignedPreKeyById(id) {
-  return getById(CONTACT_SIGNED_PRE_KEYS_TABLE, id);
-}
 async function getContactSignedPreKeyByIdentityKey(key) {
   const row = await db.get(
     `SELECT * FROM ${CONTACT_SIGNED_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString ORDER BY keyId DESC;`,
@@ -1331,17 +1306,6 @@ async function getContactSignedPreKeyByIdentityKey(key) {
   }
 
   return jsonToObject(row.json);
-}
-async function getContactSignedPreKeys(keyId, identityKeyString) {
-  const query = `SELECT * FROM ${CONTACT_SIGNED_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString AND keyId = $keyId;`;
-  const rows = await db.all(query, {
-    $keyId: keyId,
-    $identityKeyString: identityKeyString,
-  });
-  return map(rows, row => jsonToObject(row.json));
-}
-async function bulkAddContactSignedPreKeys(array) {
-  return bulkAdd(CONTACT_SIGNED_PRE_KEYS_TABLE, array);
 }
 async function removeContactSignedPreKeyByIdentityKey(key) {
   await db.run(
@@ -1364,10 +1328,6 @@ async function getSignedPreKeyById(id) {
 }
 async function getAllSignedPreKeys() {
   const rows = await db.all('SELECT json FROM signedPreKeys ORDER BY id ASC;');
-  return map(rows, row => jsonToObject(row.json));
-}
-async function getAllContactPreKeys() {
-  const rows = await db.all('SELECT json FROM contactPreKeys ORDER BY id ASC;');
   return map(rows, row => jsonToObject(row.json));
 }
 async function bulkAddSignedPreKeys(array) {
