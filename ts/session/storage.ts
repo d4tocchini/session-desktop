@@ -127,6 +127,21 @@ export async function getAuthorisationForSecondaryPubKey(
   return Data.getAuthorisationForSecondaryPubKey(secondaryPubKey);
 }
 
+export async function getSecondaryDevicesFor(
+  primaryDevicePubKey: string
+): Promise<Array<string>> {
+  return Data.getSecondaryDevicesFor(primaryDevicePubKey);
+}
+
+export async function getAllDevicePubKeysForPrimaryPubKey(
+  primaryDevicePubKey: string
+): Promise<Array<string>> {
+  await fetchPairingAuthorisationsFor(primaryDevicePubKey);
+  const secondaryPubKeys = await getSecondaryDevicesFor(primaryDevicePubKey);
+
+  return secondaryPubKeys.concat(primaryDevicePubKey);
+}
+
 /**
  * Return all the paired pubkeys for a specific pubkey (excluded), irrespective of their Primary or Secondary status.
  */

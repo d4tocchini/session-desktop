@@ -185,6 +185,12 @@
     return signature;
   }
 
+  // FIXME: This is a temporary function to bridge the refactor
+  async function generateBase64SignatureForPairing(secondaryPubKey, type) {
+    const signature = await generateSignatureForPairing(secondaryPubKey, type);
+    return dcodeIO.ByteBuffer.wrap(signature).toString('base64');
+  }
+
   async function verifyAuthorisation(authorisation) {
     const {
       primaryDevicePubKey,
@@ -480,6 +486,7 @@
     snodeCipher,
     decryptToken,
     generateSignatureForPairing,
+    generateBase64SignatureForPairing,
     verifyPairingSignature,
     verifyAuthorisation,
     validateAuthorisation,

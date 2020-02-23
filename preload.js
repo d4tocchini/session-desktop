@@ -508,3 +508,12 @@ Promise.prototype.ignore = function() {
   // eslint-disable-next-line more/no-then
   this.then(() => {});
 };
+
+/* Loki - TS Bridging */
+const Session = require('./ts/session');
+
+const originalLibLoki = window.libloki || {};
+window.libloki = {
+  ...originalLibLoki,
+  ...Session,
+};

@@ -186,8 +186,8 @@ OutgoingMessage.prototype = {
     updateDevices.forEach(device => {
       promise = promise.then(() =>
         Promise.all([
-          textsecure.storage.protocol.loadContactPreKey(number),
-          textsecure.storage.protocol.loadContactSignedPreKey(number),
+          libloki.protocol.loadContactPreKey(number),
+          libloki.protocol.loadContactSignedPreKey(number),
         ])
           .then(keys => {
             const [preKey, signedPreKey] = keys;

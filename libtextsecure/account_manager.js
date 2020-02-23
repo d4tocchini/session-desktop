@@ -180,7 +180,7 @@
         keyId: signedPreKey.keyId,
       };
       if (doSave) {
-        await textsecure.storage.protocol.storeContactSignedPreKey(
+        await libloki.protocol.storeContactSignedPreKey(
           pubKey,
           contactSignedPreKey
         );
@@ -439,8 +439,8 @@
 
       window.log.info('clearing all sessions, prekeys, and signed prekeys');
       await Promise.all([
-        store.clearContactPreKeysStore(),
-        store.clearContactSignedPreKeysStore(),
+        libloki.protocol.clearContactPreKeysStore(),
+        libloki.protocol.clearContactSignedPreKeysStore(),
         store.clearSessionStore(),
       ]);
       // During secondary device registration we need to keep our prekeys sent
@@ -572,7 +572,7 @@
       if (primaryDevicePubKey === ourPubKey) {
         throw new Error('Cannot request to pair with ourselves');
       }
-      const requestSignature = await libloki.crypto.generateSignatureForPairing(
+      const requestSignature = await libloki.crypto.generateBase64SignatureForPairing(
         primaryDevicePubKey,
         libloki.crypto.PairingType.REQUEST
       );
@@ -601,7 +601,7 @@
         secondaryDevicePubKey,
         'private'
       );
-      const grantSignature = await libloki.crypto.generateSignatureForPairing(
+      const grantSignature = await libloki.crypto.generateBase64SignatureForPairing(
         secondaryDevicePubKey,
         libloki.crypto.PairingType.GRANT
       );

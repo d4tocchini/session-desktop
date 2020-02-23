@@ -415,8 +415,8 @@ MessageSender.prototype = {
     const hasKeys = async number => {
       try {
         const [preKey, signedPreKey] = await Promise.all([
-          textsecure.storage.protocol.loadContactPreKey(number),
-          textsecure.storage.protocol.loadContactSignedPreKey(number),
+          libloki.loadContactPreKey(number),
+          libloki.loadContactSignedPreKey(number),
         ]);
         return preKey !== undefined && signedPreKey !== undefined;
       } catch (e) {

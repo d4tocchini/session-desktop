@@ -1726,8 +1726,8 @@ MessageReceiver.prototype.extend({
         // The old sessions will get deleted once the correspondant
         // has switch the the new session.
         const [preKey, signedPreKey] = await Promise.all([
-          textsecure.storage.protocol.loadContactPreKey(number),
-          textsecure.storage.protocol.loadContactSignedPreKey(number),
+          libloki.protocol.loadContactPreKey(number),
+          libloki.protocol.loadContactSignedPreKey(number),
         ]);
         if (preKey === undefined || signedPreKey === undefined) {
           return;
