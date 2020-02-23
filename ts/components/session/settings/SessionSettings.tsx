@@ -7,6 +7,7 @@ import {
   SessionButtonColor,
   SessionButtonType,
 } from '../SessionButton';
+import { getPasswordHash } from '../../../../js/modules/data';
 
 export enum SessionSettingCategory {
   Appearance = 'appearance',
@@ -202,7 +203,7 @@ export class SettingsView extends React.Component<SettingsViewProps, State> {
     }
 
     // Check if the password matches the hash we have stored
-    const hash = await window.Signal.Data.getPasswordHash();
+    const hash = await getPasswordHash();
     if (hash && !window.passwordUtil.matchesHash(enteredPassword, hash)) {
       this.setState({
         pwdLockError: window.i18n('invalidPassword'),
@@ -260,7 +261,7 @@ export class SettingsView extends React.Component<SettingsViewProps, State> {
   }
 
   public hasPassword() {
-    const hashPromise = window.Signal.Data.getPasswordHash();
+    const hashPromise = getPasswordHash();
 
     hashPromise.then((hash: any) => {
       this.setState({

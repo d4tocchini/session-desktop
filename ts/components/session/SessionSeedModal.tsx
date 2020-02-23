@@ -2,6 +2,7 @@ import React from 'react';
 
 import { SessionModal } from './SessionModal';
 import { SessionButton } from './SessionButton';
+import { getPasswordHash } from '../../../js/modules/data';
 
 interface Props {
   onClose: any;
@@ -182,7 +183,7 @@ export class SessionSeedModal extends React.Component<Props, State> {
       return;
     }
 
-    const hashPromise = window.Signal.Data.getPasswordHash();
+    const hashPromise = getPasswordHash();
 
     hashPromise.then((hash: any) => {
       this.setState({

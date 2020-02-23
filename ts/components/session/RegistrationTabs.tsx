@@ -11,6 +11,7 @@ import { trigger } from '../../shims/events';
 import { SessionHtmlRenderer } from './SessionHTMLRenderer';
 import { SessionIdEditable } from './SessionIdEditable';
 import { SessionSpinner } from './SessionSpinner';
+import * as Data from '../../../js/modules/data';
 
 enum SignInMode {
   Default,
@@ -714,8 +715,8 @@ export class RegistrationTabs extends React.Component<{}, State> {
   }
 
   private async resetRegistration() {
-    await window.Signal.Data.removeAllIdentityKeys();
-    await window.Signal.Data.removeAllPrivateConversations();
+    await Data.removeAllIdentityKeys();
+    await Data.removeAllPrivateConversations();
     window.Whisper.Registration.remove();
     // Do not remove all items since they are only set
     // at startup.

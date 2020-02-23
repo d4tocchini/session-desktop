@@ -64,3 +64,7 @@ export async function getPrimaryDeviceFor(
 export async function getPairedDevicesFor(
   pubKey: string
 ): Promise<Array<string>>;
+
+
+export async function removeAllIdentityKeys(): Promise<void>;
+export async function removeAllPrivateConversations(): Promise<void>;

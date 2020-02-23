@@ -2,6 +2,7 @@ import React from 'react';
 
 import { SessionModal } from './SessionModal';
 import { SessionButton, SessionButtonColor } from './SessionButton';
+import { getPasswordHash } from '../../../js/modules/data';
 
 export enum PasswordAction {
   Set = 'set',
@@ -99,7 +100,7 @@ export class SessionPasswordModal extends React.Component<Props, State> {
 
   public async validatePasswordHash(password: string | null) {
     // Check if the password matches the hash we have stored
-    const hash = await window.Signal.Data.getPasswordHash();
+    const hash = await getPasswordHash();
     if (hash && !window.passwordUtil.matchesHash(password, hash)) {
       return false;
     }
