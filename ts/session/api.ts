@@ -85,7 +85,7 @@ export async function sendUnpairingMessageToSecondary(
 }
 
 export async function createContactSyncProtoMessage(
-  conversations: [Conversation]
+  conversations: Array<Conversation>
 ): Promise<SignalService.SyncMessage | null> {
   const sessionContacts = conversations.filter(
     c => c.isPrivate() && !c.isSecondaryDevice()
@@ -133,6 +133,36 @@ export async function createContactSyncProtoMessage(
   const contacts = new SignalService.SyncMessage.Contacts({ data });
 
   return new SignalService.SyncMessage({ contacts });
+}
+
+export async function createGroupSyncProtoMessage(conversations: Array<Conversation>): Promise<SignalService.SyncMessage | null> {
+  // We only want to sync across closed groups that we haven't left
+  const sessionGroups = conversations.filter(
+    c => c.isClosedGroup() && !c.get('left') && c.isFriend()
+  );
+  if (sessionGroups.length === 0) {
+    return null;
+  }
+
+  const rawGroups = sessionGroups.map(conversation => ({
+    id: window.Signal.Crypto.bytesFromString(conversation.id),
+    name: conversation.get('name'),
+    members: conversation.get('members') || [],
+    blocked: conversation.isBlocked(),
+    expireTimer: conversation.get('expireTimer'),
+    admins: conversation.get('groupAdmins') || [],
+  }));
+
+  // Convert raw groups to an array of buffers
+  const groupDetails = rawGroups
+    .map(x => new SignalService.GroupDetails(x))
+    .map(x => SignalService.GroupDetails.encode(x).finish());
+
+  const byteBuffer = serialiseByteBuffers(groupDetails);
+  const data = new Uint8Array(byteBuffer.toArrayBuffer());
+  const groups = new SignalService.SyncMessage.Groups({ data });
+
+  return new SignalService.SyncMessage({ groups });
 }
 
 export async function sendPairingAuthorisation(

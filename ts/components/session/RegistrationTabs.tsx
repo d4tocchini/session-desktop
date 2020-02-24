@@ -586,6 +586,7 @@ export class RegistrationTabs extends React.Component<{}, State> {
     } = this.state;
 
     let enableContinue = true;
+    let text = window.i18n('continueYourSession');
     const displayNameOK = !displayNameError && !!displayName; //display name required
     const mnemonicOK = !mnemonicError && !!mnemonicSeed; //Mnemonic required
     const passwordsOK =
@@ -594,6 +595,7 @@ export class RegistrationTabs extends React.Component<{}, State> {
       enableContinue = displayNameOK && mnemonicOK && passwordsOK;
     } else if (signInMode === SignInMode.LinkingDevice) {
       enableContinue = !!primaryDevicePubKey;
+      text = window.i18n('linkDevice');
     } else if (signUpMode === SignUpMode.EnterDetails) {
       enableContinue = displayNameOK && passwordsOK;
     }
@@ -605,7 +607,7 @@ export class RegistrationTabs extends React.Component<{}, State> {
         }}
         buttonType={SessionButtonType.Brand}
         buttonColor={SessionButtonColor.Green}
-        text={window.i18n('continueYourSession')}
+        text={text}
         disabled={!enableContinue}
       />
     );
