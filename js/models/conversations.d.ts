@@ -44,9 +44,6 @@ export interface Conversation extends Backbone.Model {
     status: boolean,
     primaryDevicePubKey: string
   ): Promise<void>;
-
-  // This should be slowly fazed out
-  get(key: string): any;
 }
 
 export namespace Conversation {

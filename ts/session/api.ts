@@ -135,7 +135,9 @@ export async function createContactSyncProtoMessage(
   return new SignalService.SyncMessage({ contacts });
 }
 
-export async function createGroupSyncProtoMessage(conversations: Array<Conversation>): Promise<SignalService.SyncMessage | null> {
+export async function createGroupSyncProtoMessage(
+  conversations: Array<Conversation>
+): Promise<SignalService.SyncMessage | null> {
   // We only want to sync across closed groups that we haven't left
   const sessionGroups = conversations.filter(
     c => c.isClosedGroup() && !c.get('left') && c.isFriend()
