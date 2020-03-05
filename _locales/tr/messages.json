@@ -553,7 +553,7 @@
         "message": "Görüntü olmayan eklentiler içerildiğinde, ileti başı eklenti sınırı birdir.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Görüntü ve görüntü olmayan eklentileri tek iletide birleştiremezsiniz.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "İletiler",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Signal'e Hoşgeldin",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Signal güncellemesi mevcut",
+        "message": "Session güncellemesi mevcut",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Signal'ın yeni bir sürümü mevcut.",
+        "message": "Session'ın yeni bir sürümü mevcut.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Güncellemeleri uygulamak için 'Signal'i Yeniden Başlat'a basınız.",
+        "message": "Güncellemeleri uygulamak için 'Session'i Yeniden Başlat'a basınız.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Signal'i Yeniden Başlat",
+        "message": "Session'i Yeniden Başlat",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Şartlar ve Gizlilik İlkesi",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

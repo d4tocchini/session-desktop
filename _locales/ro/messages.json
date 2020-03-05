@@ -553,7 +553,7 @@
         "message": "When including a non-image attachment, the limit is one attachment per message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "You cannot mix non-image and image attachments in one message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Mesaje",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Bun venit la Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Este disponibilă o actualizare de Signal ",
+        "message": "Este disponibilă o actualizare de Session ",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Este disponibilă o nouă versiune de Signal.",
+        "message": "Este disponibilă o nouă versiune de Session.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Apasă pe Repornire Signal pentru a aplica actualizările.",
+        "message": "Apasă pe Repornire Session pentru a aplica actualizările.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Repornește Signal",
+        "message": "Repornește Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Termeni și politica de confidențialitate",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

@@ -8,7 +8,10 @@
   storage,
   textsecure,
   Whisper,
-  BlockedNumberController
+  libloki,
+  libsignal,
+  StringView,
+  BlockedNumberController,
 */
 
 // eslint-disable-next-line func-names
@@ -55,6 +58,7 @@
     'check.svg',
     'clock.svg',
     'close-circle.svg',
+    'crown.svg',
     'delete.svg',
     'dots-horizontal.svg',
     'double-check.svg',
@@ -116,9 +120,12 @@
     'warning.svg',
     'x.svg',
     'x_white.svg',
-    'loki/loki_icon_text.png',
-    'loki/loki_icon_128.png',
+    'icon-paste.svg',
+    'loki/session_icon_128.png',
   ]);
+
+  // Set server-client time difference
+  window.LokiPublicChatAPI.setClockParams();
 
   // We add this to window here because the default Node context is erased at the end
   //   of preload.js processing
@@ -170,6 +177,8 @@
     return -1;
   };
   Whisper.events = _.clone(Backbone.Events);
+  Whisper.events.isListenedTo = eventName =>
+    Whisper.events._events ? !!Whisper.events._events[eventName] : false;
   let accountManager;
   window.getAccountManager = () => {
     if (!accountManager) {
@@ -180,6 +189,7 @@
         const user = {
           regionCode: window.storage.get('regionCode'),
           ourNumber: textsecure.storage.user.getNumber(),
+          isSecondaryDevice: !!textsecure.storage.get('isSecondaryDevice'),
         };
         Whisper.events.trigger('userChanged', user);
 
@@ -203,6 +213,56 @@
   window.log.info('Storage fetch');
   storage.fetch();
 
+  let specialConvInited = false;
+  const initSpecialConversations = async () => {
+    if (specialConvInited) {
+      return;
+    }
+    const rssFeedConversations = await window.Signal.Data.getAllRssFeedConversations(
+      {
+        ConversationCollection: Whisper.ConversationCollection,
+      }
+    );
+    rssFeedConversations.forEach(conversation => {
+      window.feeds.push(new window.LokiRssAPI(conversation.getRssSettings()));
+    });
+    const publicConversations = await window.Signal.Data.getAllPublicConversations(
+      {
+        ConversationCollection: Whisper.ConversationCollection,
+      }
+    );
+    publicConversations.forEach(conversation => {
+      // weird but create the object and does everything we need
+      conversation.getPublicSendData();
+    });
+    specialConvInited = true;
+  };
+
+  const initAPIs = () => {
+    if (window.initialisedAPI) {
+      return;
+    }
+    const ourKey = textsecure.storage.user.getNumber();
+    window.feeds = [];
+    window.lokiMessageAPI = new window.LokiMessageAPI(ourKey);
+    // singleton to relay events to libtextsecure/message_receiver
+    window.lokiPublicChatAPI = new window.LokiPublicChatAPI(ourKey);
+    // singleton to interface the File server
+    // If already exists we registered as a secondary device
+    if (!window.lokiFileServerAPI) {
+      window.lokiFileServerAPIFactory = new window.LokiFileServerAPI(ourKey);
+      window.lokiFileServerAPI = window.lokiFileServerAPIFactory.establishHomeConnection(
+        window.getDefaultFileServer()
+      );
+    }
+
+    window.initialisedAPI = true;
+
+    if (storage.get('isSecondaryDevice')) {
+      window.lokiFileServerAPI.updateOurDeviceMapping();
+    }
+  };
+
   function mapOldThemeToNew(theme) {
     switch (theme) {
       case 'dark':
@@ -225,24 +285,29 @@
       return;
     }
     first = false;
-    window.lokiP2pAPI = new window.LokiP2pAPI(
-      textsecure.storage.user.getNumber()
-    );
-    window.lokiP2pAPI.on('pingContact', pubKey => {
-      const isPing = true;
-      window.libloki.api.sendOnlineBroadcastMessage(pubKey, isPing);
-    });
+
+    // Update zoom
+    window.updateZoomFactor();
 
     const currentPoWDifficulty = storage.get('PoWDifficulty', null);
     if (!currentPoWDifficulty) {
       storage.put('PoWDifficulty', window.getDefaultPoWDifficulty());
     }
 
+    // Ensure accounts created prior to 1.0.0-beta8 do have their
+    // 'primaryDevicePubKey' defined.
+    if (
+      Whisper.Registration.isDone() &&
+      !storage.get('primaryDevicePubKey', null)
+    ) {
+      storage.put('primaryDevicePubKey', textsecure.storage.user.getNumber());
+    }
+
     // These make key operations available to IPC handlers created in preload.js
     window.Events = {
       getDeviceName: () => textsecure.storage.user.getDeviceName(),
 
-      getThemeSetting: () => storage.get('theme-setting', 'light'),
+      getThemeSetting: () => 'dark', // storage.get('theme-setting', 'dark')
       setThemeSetting: value => {
         storage.put('theme-setting', value);
         onChangeTheme();
@@ -266,8 +331,14 @@
       setReadReceiptSetting: value =>
         storage.put('read-receipt-setting', value),
 
-      getLinkPreviewSetting: () => storage.get('linkPreviews', false),
-      setLinkPreviewSetting: value => storage.put('linkPreviews', value),
+      getTypingIndicatorsSetting: () =>
+        storage.get('typing-indicators-setting'),
+      setTypingIndicatorsSetting: value =>
+        storage.put('typing-indicators-setting', value),
+
+      getLinkPreviewSetting: () => storage.get('link-preview-setting', false),
+      setLinkPreviewSetting: value =>
+        storage.put('link-preview-setting', value),
 
       getNotificationSetting: () =>
         storage.get('notification-setting', 'message'),
@@ -330,17 +401,13 @@
     await storage.put('version', currentVersion);
 
     if (newVersion) {
-      if (
-        lastVersion &&
-        window.isBeforeVersion(lastVersion, 'v1.15.0-beta.5')
-      ) {
-        await window.Signal.Logs.deleteAll();
-        window.restart();
-      }
-
       window.log.info(
         `New version detected: ${currentVersion}; previous: ${lastVersion}`
       );
+
+      await window.Signal.Data.cleanupOrphanedAttachments();
+
+      await window.Signal.Logs.deleteAll();
     }
 
     if (isIndexedDBPresent) {
@@ -362,10 +429,6 @@
     }
 
     Views.Initialization.setMessage(window.i18n('optimizingApplication'));
-
-    if (newVersion) {
-      await window.Signal.Data.cleanupOrphanedAttachments();
-    }
 
     Views.Initialization.setMessage(window.i18n('loading'));
 
@@ -440,6 +503,28 @@
       appView.openImporter();
     }
   });
+
+  Whisper.events.on(
+    'deleteLocalPublicMessage',
+    async ({ messageServerId, conversationId }) => {
+      const message = await window.Signal.Data.getMessageByServerId(
+        messageServerId,
+        conversationId,
+        {
+          Message: Whisper.Message,
+        }
+      );
+      if (message) {
+        const conversation = ConversationController.get(conversationId);
+        if (conversation) {
+          conversation.removeMessage(message.id);
+        }
+        await window.Signal.Data.removeMessage(message.id, {
+          Message: Whisper.Message,
+        });
+      }
+    }
+  );
 
   Whisper.events.on('setupAsNewDevice', () => {
     const { appView } = window.owsDesktopApp;
@@ -533,8 +618,13 @@
     window.log.info('Cleanup: complete');
 
     window.log.info('listening for registration events');
-    Whisper.events.on('registration_done', () => {
+    Whisper.events.on('registration_done', async () => {
       window.log.info('handling registration event');
+
+      // Disable link previews as default per Kee
+      storage.onready(async () => {
+        storage.put('link-preview-setting', false);
+      });
 
       // listeners
       Whisper.RotateSignedPreKeyListener.init(Whisper.events, newVersion);
@@ -560,7 +650,10 @@
     if (Whisper.Import.isIncomplete()) {
       window.log.info('Import was interrupted, showing import error screen');
       appView.openImporter();
-    } else if (Whisper.Registration.everDone()) {
+    } else if (
+      Whisper.Registration.isDone() &&
+      !Whisper.Registration.ongoingSecondaryDeviceRegistration()
+    ) {
       // listeners
       Whisper.RotateSignedPreKeyListener.init(Whisper.events, newVersion);
       // window.Signal.RefreshSenderCertificate.initialize({
@@ -604,6 +697,557 @@
       }
     });
 
+    window.doUpdateGroup = async (groupId, groupName, members, avatar) => {
+      const ourKey = textsecure.storage.user.getNumber();
+
+      const ev = new Event('message');
+      ev.confirm = () => {};
+
+      ev.data = {
+        source: ourKey,
+        timestamp: Date.now(),
+        message: {
+          group: {
+            id: groupId,
+            type: textsecure.protobuf.GroupContext.Type.UPDATE,
+            name: groupName,
+            members,
+            avatar: null, // TODO
+          },
+        },
+      };
+
+      const convo = await ConversationController.getOrCreateAndWait(
+        groupId,
+        'group'
+      );
+
+      if (convo.isPublic()) {
+        const API = await convo.getPublicSendData();
+
+        if (avatar) {
+          // I hate duplicating this...
+          const readFile = attachment =>
+            new Promise((resolve, reject) => {
+              const fileReader = new FileReader();
+              fileReader.onload = e => {
+                const data = e.target.result;
+                resolve({
+                  ...attachment,
+                  data,
+                  size: data.byteLength,
+                });
+              };
+              fileReader.onerror = reject;
+              fileReader.onabort = reject;
+              fileReader.readAsArrayBuffer(attachment.file);
+            });
+          const attachment = await readFile({ file: avatar });
+          // const tempUrl = window.URL.createObjectURL(avatar);
+
+          // Get file onto public chat server
+          const fileObj = await API.serverAPI.putAttachment(attachment.data);
+          if (fileObj === null) {
+            // problem
+            window.warn('File upload failed');
+            return;
+          }
+
+          // lets not allow ANY URLs, lets force it to be local to public chat server
+          const relativeFileUrl = fileObj.url.replace(
+            API.serverAPI.baseServerUrl,
+            ''
+          );
+          // write it to the channel
+          await API.setChannelAvatar(relativeFileUrl);
+        }
+
+        if (await API.setChannelName(groupName)) {
+          // queue update from server
+          // and let that set the conversation
+          API.pollForChannelOnce();
+          // or we could just directly call
+          // convo.setGroupName(groupName);
+          // but gut is saying let the server be the definitive storage of the state
+          // and trickle down from there
+        }
+        return;
+      }
+
+      const nullAvatar = '';
+      if (avatar) {
+        // would get to download this file on each client in the group
+        // and reference the local file
+      }
+      const options = {};
+
+      const recipients = _.union(convo.get('members'), members);
+
+      await onMessageReceived(ev);
+      convo.updateGroup({
+        groupId,
+        groupName,
+        avatar: nullAvatar,
+        recipients,
+        members,
+        options,
+      });
+    };
+
+    window.doCreateGroup = async (groupName, members) => {
+      const keypair = await libsignal.KeyHelper.generateIdentityKeyPair();
+      const groupId = StringView.arrayBufferToHex(keypair.pubKey);
+
+      const ev = new Event('group');
+
+      const primaryDeviceKey =
+        window.storage.get('primaryDevicePubKey') ||
+        textsecure.storage.user.getNumber();
+      const allMembers = [primaryDeviceKey, ...members];
+
+      ev.groupDetails = {
+        id: groupId,
+        name: groupName,
+        members: allMembers,
+        recipients: allMembers,
+        active: true,
+        expireTimer: 0,
+        avatar: '',
+      };
+
+      ev.confirm = () => {};
+
+      await onGroupReceived(ev);
+
+      const convo = await ConversationController.getOrCreateAndWait(
+        groupId,
+        'group'
+      );
+
+      convo.updateGroupAdmins([primaryDeviceKey]);
+      convo.updateGroup(ev.groupDetails);
+
+      // Group conversations are automatically 'friends'
+      // so that we can skip the friend request logic
+      convo.setFriendRequestStatus(
+        window.friends.friendRequestStatusEnum.friends
+      );
+
+      appView.openConversation(groupId, {});
+    };
+
+    window.confirmationDialog = params => {
+      const confirmDialog = new Whisper.SessionConfirmView({
+        el: $('body'),
+        title: params.title,
+        message: params.message,
+        messageSub: params.messageSub || undefined,
+        resolve: params.resolve || undefined,
+        reject: params.reject || undefined,
+        okText: params.okText || undefined,
+        okTheme: params.okTheme || undefined,
+        closeTheme: params.closeTheme || undefined,
+        cancelText: params.cancelText || undefined,
+        hideCancel: params.hideCancel || false,
+      });
+
+      confirmDialog.render();
+    };
+
+    window.showQRDialog = window.owsDesktopApp.appView.showQRDialog;
+    window.showSeedDialog = window.owsDesktopApp.appView.showSeedDialog;
+    window.showPasswordDialog = window.owsDesktopApp.appView.showPasswordDialog;
+    window.showEditProfileDialog = async callback => {
+      const ourNumber = window.storage.get('primaryDevicePubKey');
+      const conversation = await ConversationController.getOrCreateAndWait(
+        ourNumber,
+        'private'
+      );
+
+      const readFile = attachment =>
+        new Promise((resolve, reject) => {
+          const fileReader = new FileReader();
+          fileReader.onload = e => {
+            const data = e.target.result;
+            resolve({
+              ...attachment,
+              data,
+              size: data.byteLength,
+            });
+          };
+          fileReader.onerror = reject;
+          fileReader.onabort = reject;
+          fileReader.readAsArrayBuffer(attachment.file);
+        });
+
+      const avatarPath = conversation.getAvatarPath();
+      const profile = conversation.getLokiProfile();
+      const displayName = profile && profile.displayName;
+
+      if (appView) {
+        appView.showEditProfileDialog({
+          callback,
+          profileName: displayName,
+          pubkey: ourNumber,
+          avatarPath,
+          avatarColor: conversation.getColor(),
+          onOk: async (newName, avatar) => {
+            let newAvatarPath = '';
+            let url = null;
+            let profileKey = null;
+            if (avatar) {
+              const data = await readFile({ file: avatar });
+
+              // For simplicity we use the same attachment pointer that would send to
+              // others, which means we need to wait for the database response.
+              // To avoid the wait, we create a temporary url for the local image
+              // and use it until we the the response from the server
+              const tempUrl = window.URL.createObjectURL(avatar);
+              conversation.setLokiProfile({ displayName: newName });
+              conversation.set('avatar', tempUrl);
+
+              // Encrypt with a new key every time
+              profileKey = libsignal.crypto.getRandomBytes(32);
+              const encryptedData = await textsecure.crypto.encryptProfile(
+                data.data,
+                profileKey
+              );
+
+              const avatarPointer = await textsecure.messaging.uploadAvatar({
+                ...data,
+                data: encryptedData,
+                size: encryptedData.byteLength,
+              });
+
+              ({ url } = avatarPointer);
+
+              storage.put('profileKey', profileKey);
+
+              conversation.set('avatarPointer', url);
+
+              const upgraded = await Signal.Migrations.processNewAttachment({
+                isRaw: true,
+                data: data.data,
+                url,
+              });
+              newAvatarPath = upgraded.path;
+            }
+
+            // Replace our temporary image with the attachment pointer from the server:
+            conversation.set('avatar', null);
+            conversation.setLokiProfile({
+              displayName: newName,
+              avatar: newAvatarPath,
+            });
+            // inform all your registered public servers
+            // could put load on all the servers
+            // if they just keep changing their names without sending messages
+            // so we could disable this here
+            // or least it enable for the quickest response
+            window.lokiPublicChatAPI.setProfileName(newName);
+            window
+              .getConversations()
+              .filter(convo => convo.isPublic() && !convo.isRss())
+              .forEach(convo =>
+                convo.trigger('ourAvatarChanged', { url, profileKey })
+              );
+          },
+        });
+      }
+    };
+
+    // Set user's launch count.
+    const prevLaunchCount = window.getSettingValue('launch-count');
+    const launchCount = !prevLaunchCount ? 1 : prevLaunchCount + 1;
+    window.setSettingValue('launch-count', launchCount);
+
+    // On first launch
+    if (launchCount === 1) {
+      // Initialise default settings
+      window.setSettingValue('hide-menu-bar', true);
+      window.setSettingValue('link-preview-setting', false);
+    }
+
+    // Render onboarding message from LeftPaneMessageSection
+    // unless user turns it off during their session
+    window.setSettingValue('render-message-onboarding', true);
+
+    // Generates useful random ID for various purposes
+    window.generateID = () =>
+      Math.random()
+        .toString(36)
+        .substring(3);
+
+    window.toasts = new Map();
+    window.pushToast = options => {
+      // Setting toasts with the same ID can be used to prevent identical
+      // toasts from appearing at once (stacking).
+      // If toast already exists, it will be reloaded (updated)
+
+      const params = {
+        title: options.title,
+        id: options.id || window.generateID(),
+        description: options.description || '',
+        type: options.type || '',
+        icon: options.icon || '',
+        shouldFade: options.shouldFade,
+      };
+
+      // Give all toasts an ID. User may define.
+      let currentToast;
+      const toastID = params.id;
+      const toast = !!toastID && window.toasts.get(toastID);
+      if (toast) {
+        currentToast = window.toasts.get(toastID);
+        currentToast.update(params);
+      } else {
+        // Make new Toast
+        window.toasts.set(
+          toastID,
+          new Whisper.SessionToastView({
+            el: $('body'),
+          })
+        );
+
+        currentToast = window.toasts.get(toastID);
+        currentToast.render();
+        currentToast.update(params);
+      }
+
+      // Remove some toasts if too many exist
+      const maxToasts = 6;
+      while (window.toasts.size > maxToasts) {
+        const finalToastID = window.toasts.keys().next().value;
+        window.toasts.get(finalToastID).fadeToast();
+      }
+
+      return toastID;
+    };
+
+    window.getFriendsFromContacts = contacts => {
+      // To call from TypeScript, input / output are both
+      // of type Array<ConversationType>
+      let friendList = contacts;
+      if (friendList !== undefined) {
+        friendList = friendList.filter(
+          friend =>
+            (friend.type === 'direct' && !friend.isMe) ||
+            (friend.type === 'group' && !friend.isPublic && !friend.isRss)
+        );
+      }
+      return friendList;
+    };
+
+    // Get memberlist. This function is not accurate >>
+    // window.getMemberList = window.lokiPublicChatAPI.getListOfMembers();
+
+    window.deleteAccount = async () => {
+      try {
+        window.log.info('Deleting everything!');
+
+        const { Logs } = window.Signal;
+        await Logs.deleteAll();
+
+        await window.Signal.Data.removeAll();
+        await window.Signal.Data.close();
+        await window.Signal.Data.removeDB();
+
+        await window.Signal.Data.removeOtherData();
+      } catch (error) {
+        window.log.error(
+          'Something went wrong deleting all data:',
+          error && error.stack ? error.stack : error
+        );
+      }
+      window.restart();
+    };
+
+    window.toggleTheme = () => {
+      const theme = window.Events.getThemeSetting();
+      const updatedTheme = theme === 'dark' ? 'light' : 'dark';
+
+      $(document.body)
+        .removeClass('dark-theme')
+        .removeClass('light-theme')
+        .addClass(`${updatedTheme}-theme`);
+      window.Events.setThemeSetting(updatedTheme);
+    };
+
+    window.toggleMenuBar = () => {
+      const current = window.getSettingValue('hide-menu-bar');
+      if (current === undefined) {
+        window.Events.setHideMenuBar(false);
+        return;
+      }
+
+      window.Events.setHideMenuBar(!current);
+    };
+
+    window.toggleSpellCheck = () => {
+      const newValue = !window.getSettingValue('spell-check');
+      window.Events.setSpellCheck(newValue);
+    };
+
+    window.toggleLinkPreview = () => {
+      const newValue = !window.getSettingValue('link-preview-setting');
+      window.setSettingValue('link-preview-setting', newValue);
+    };
+
+    window.toggleMediaPermissions = () => {
+      const mediaPermissions = window.getMediaPermissions();
+      window.setMediaPermissions(!mediaPermissions);
+    };
+
+    // attempts a connection to an open group server
+    window.attemptConnection = async (serverURL, channelId) => {
+      let rawserverURL = serverURL
+        .replace(/^https?:\/\//i, '')
+        .replace(/[/\\]+$/i, '');
+      rawserverURL = rawserverURL.toLowerCase();
+      const sslServerURL = `https://${rawserverURL}`;
+      const conversationId = `publicChat:${channelId}@${rawserverURL}`;
+
+      // quickly peak to make sure we don't already have it
+      const conversationExists = window.ConversationController.get(
+        conversationId
+      );
+      if (conversationExists) {
+        // We are already a member of this public chat
+        return new Promise((_resolve, reject) => {
+          reject(window.i18n('publicChatExists'));
+        });
+      }
+
+      // get server
+      const serverAPI = await window.lokiPublicChatAPI.findOrCreateServer(
+        sslServerURL
+      );
+      // SSL certificate failure or offline
+      if (!serverAPI) {
+        // Url incorrect or server not compatible
+        return new Promise((_resolve, reject) => {
+          reject(window.i18n('connectToServerFail'));
+        });
+      }
+
+      // create conversation
+      const conversation = await window.ConversationController.getOrCreateAndWait(
+        conversationId,
+        'group'
+      );
+
+      // convert conversation to a public one
+      await conversation.setPublicSource(sslServerURL, channelId);
+      // set friend and appropriate SYNC messages for multidevice
+      await conversation.setFriendRequestStatus(
+        window.friends.friendRequestStatusEnum.friends,
+        { blockSync: true }
+      );
+
+      // and finally activate it
+      conversation.getPublicSendData(); // may want "await" if you want to use the API
+
+      return conversation;
+    };
+
+    window.sendGroupInvitations = (serverInfo, pubkeys) => {
+      pubkeys.forEach(async pubkey => {
+        const convo = await ConversationController.getOrCreateAndWait(
+          pubkey,
+          'private'
+        );
+
+        if (convo) {
+          convo.sendMessage('', null, null, null, {
+            serverName: serverInfo.name,
+            channelId: serverInfo.channelId,
+            serverAddress: serverInfo.address,
+          });
+        }
+      });
+    };
+
+    Whisper.events.on('createNewGroup', async () => {
+      if (appView) {
+        appView.showCreateGroup();
+      }
+    });
+
+    Whisper.events.on('updateGroupName', async groupConvo => {
+      if (appView) {
+        appView.showUpdateGroupNameDialog(groupConvo);
+      }
+    });
+    Whisper.events.on('updateGroupMembers', async groupConvo => {
+      if (appView) {
+        appView.showUpdateGroupMembersDialog(groupConvo);
+      }
+    });
+
+    Whisper.events.on('inviteFriends', async groupConvo => {
+      if (appView) {
+        appView.showInviteFriendsDialog(groupConvo);
+      }
+    });
+
+    Whisper.events.on('addModerators', async groupConvo => {
+      if (appView) {
+        appView.showAddModeratorsDialog(groupConvo);
+      }
+    });
+
+    Whisper.events.on('removeModerators', async groupConvo => {
+      if (appView) {
+        appView.showRemoveModeratorsDialog(groupConvo);
+      }
+    });
+
+    Whisper.events.on(
+      'publicChatInvitationAccepted',
+      async (serverAddress, channelId) => {
+        // To some degree this has been copy-pasted
+        // form connection_to_server_dialog_view.js:
+        const rawServerUrl = serverAddress
+          .replace(/^https?:\/\//i, '')
+          .replace(/[/\\]+$/i, '');
+        const sslServerUrl = `https://${rawServerUrl}`;
+        const conversationId = `publicChat:${channelId}@${rawServerUrl}`;
+
+        const conversationExists = ConversationController.get(conversationId);
+        if (conversationExists) {
+          window.log.warn('We are already a member of this public chat');
+          return;
+        }
+
+        const serverAPI = await window.lokiPublicChatAPI.findOrCreateServer(
+          sslServerUrl
+        );
+        if (!serverAPI) {
+          window.log.warn(`Could not connect to ${serverAddress}`);
+          return;
+        }
+
+        const conversation = await ConversationController.getOrCreateAndWait(
+          conversationId,
+          'group'
+        );
+
+        serverAPI.findOrCreateChannel(channelId, conversationId);
+        await conversation.setPublicSource(sslServerUrl, channelId);
+        await conversation.setFriendRequestStatus(
+          window.friends.friendRequestStatusEnum.friends
+        );
+
+        appView.openConversation(conversationId, {});
+      }
+    );
+
+    Whisper.events.on('leaveGroup', async groupConvo => {
+      if (appView) {
+        appView.showLeaveGroupDialog(groupConvo);
+      }
+    });
+
     Whisper.events.on('deleteConversation', async conversation => {
       await conversation.destroyMessages();
       await window.Signal.Data.removeConversation(conversation.id, {
@@ -622,24 +1266,38 @@
       }
     });
 
-    Whisper.events.on('onEditProfile', () => {
-      const ourNumber = textsecure.storage.user.getNumber();
-      const profile = storage.getLocalProfile();
-      const displayName = profile && profile.displayName;
-      if (appView) {
-        appView.showNicknameDialog({
-          title: window.i18n('editProfileTitle'),
-          message: window.i18n('editProfileDisplayNameWarning'),
-          nickname: displayName,
-          onOk: async newName => {
-            await storage.setProfileName(newName);
+    Whisper.events.on('openInbox', () => {
+      appView.openInbox({
+        initialLoadComplete,
+      });
+    });
 
-            // Update the conversation if we have it
-            const conversation = ConversationController.get(ourNumber);
-            if (conversation) {
-              const newProfile = storage.getLocalProfile();
-              conversation.setProfile(newProfile);
-            }
+    Whisper.events.on('onShowUserDetails', async ({ userPubKey }) => {
+      const isMe = userPubKey === textsecure.storage.user.getNumber();
+
+      if (isMe) {
+        Whisper.events.trigger('onEditProfile');
+        return;
+      }
+
+      const conversation = await ConversationController.getOrCreateAndWait(
+        userPubKey,
+        'private'
+      );
+
+      const avatarPath = conversation.getAvatarPath();
+      const profile = conversation.getLokiProfile();
+      const displayName = profile && profile.displayName;
+
+      if (appView) {
+        appView.showUserDetailsDialog({
+          profileName: displayName,
+          pubkey: userPubKey,
+          avatarPath,
+          avatarColor: conversation.getColor(),
+          isRss: conversation.isRss(),
+          onStartConversation: () => {
+            Whisper.events.trigger('showConversation', userPubKey);
           },
         });
       }
@@ -665,23 +1323,40 @@
       }
     });
 
+    Whisper.events.on('showSessionRestoreConfirmation', options => {
+      if (appView) {
+        appView.showSessionRestoreConfirmation(options);
+      }
+    });
+
     Whisper.events.on('showNicknameDialog', options => {
       if (appView) {
         appView.showNicknameDialog(options);
       }
     });
 
-    Whisper.events.on('showPasswordDialog', options => {
+    Whisper.events.on('showSeedDialog', async () => {
       if (appView) {
-        appView.showPasswordDialog(options);
+        appView.showSeedDialog();
       }
     });
 
-    Whisper.events.on('showSeedDialog', async () => {
-      const manager = await getAccountManager();
-      if (appView && manager) {
-        const seed = manager.getCurrentMnemonic();
-        appView.showSeedDialog(seed);
+    Whisper.events.on('showQRDialog', async () => {
+      if (appView) {
+        const ourNumber = textsecure.storage.user.getNumber();
+        appView.showQRDialog(ourNumber);
+      }
+    });
+
+    Whisper.events.on('showDevicePairingDialog', async (options = {}) => {
+      if (appView) {
+        appView.showDevicePairingDialog(options);
+      }
+    });
+
+    Whisper.events.on('showDevicePairingWordsDialog', async () => {
+      if (appView) {
+        appView.showDevicePairingWordsDialog();
       }
     });
 
@@ -694,19 +1369,50 @@
       }
     });
 
-    Whisper.events.on('p2pMessageSent', ({ pubKey, timestamp }) => {
-      try {
-        const conversation = ConversationController.get(pubKey);
-        conversation.onP2pMessageSent(pubKey, timestamp);
-      } catch (e) {
-        window.log.error('Error setting p2p on message');
+    Whisper.events.on(
+      'publicMessageSent',
+      ({ pubKey, timestamp, serverId }) => {
+        try {
+          const conversation = ConversationController.get(pubKey);
+          conversation.onPublicMessageSent(pubKey, timestamp, serverId);
+        } catch (e) {
+          window.log.error('Error setting public on message');
+        }
       }
-    });
+    );
 
     Whisper.events.on('password-updated', () => {
       if (appView && appView.inboxView) {
         appView.inboxView.trigger('password-updated');
       }
+    });
+
+    Whisper.events.on('devicePairingRequestAccepted', async (pubKey, cb) => {
+      try {
+        await getAccountManager().authoriseSecondaryDevice(pubKey);
+        cb(null);
+      } catch (e) {
+        cb(e);
+      }
+    });
+
+    Whisper.events.on('devicePairingRequestRejected', async pubKey => {
+      await libloki.storage.removeContactPreKeyBundle(pubKey);
+      await libloki.storage.removePairingAuthorisationForSecondaryPubKey(
+        pubKey
+      );
+    });
+
+    Whisper.events.on('deviceUnpairingRequested', async pubKey => {
+      await libloki.storage.removePairingAuthorisationForSecondaryPubKey(
+        pubKey
+      );
+      await window.lokiFileServerAPI.updateOurDeviceMapping();
+      // TODO: we should ensure the message was sent and retry automatically if not
+      await libloki.api.sendUnpairingMessageToSecondary(pubKey);
+      // Remove all traces of the device
+      ConversationController.deleteContact(pubKey);
+      Whisper.events.trigger('refreshLinkedDeviceList');
     });
   }
 
@@ -753,14 +1459,14 @@
     );
   }
 
-  function disconnect() {
+  async function disconnect() {
     window.log.info('disconnect');
 
     // Clear timer, since we're only called when the timer is expired
     disconnectTimer = null;
 
     if (messageReceiver) {
-      messageReceiver.close();
+      await messageReceiver.close();
     }
     window.Signal.AttachmentDownloads.stop();
   }
@@ -790,7 +1496,7 @@
     }
 
     if (messageReceiver) {
-      messageReceiver.close();
+      await messageReceiver.close();
     }
 
     const USERNAME = storage.get('number_id');
@@ -804,8 +1510,36 @@
     };
 
     Whisper.Notifications.disable(); // avoid notification flood until empty
+    setTimeout(() => {
+      Whisper.Notifications.enable();
+    }, window.CONSTANTS.NOTIFICATION_ENABLE_TIMEOUT_SECONDS * 1000);
 
-    // initialize the socket and start listening for messages
+    if (Whisper.Registration.ongoingSecondaryDeviceRegistration()) {
+      const ourKey = textsecure.storage.user.getNumber();
+      window.lokiMessageAPI = new window.LokiMessageAPI(ourKey);
+      window.lokiFileServerAPIFactory = new window.LokiFileServerAPI(ourKey);
+      window.lokiFileServerAPI = window.lokiFileServerAPIFactory.establishHomeConnection(
+        window.getDefaultFileServer()
+      );
+      window.lokiPublicChatAPI = null;
+      window.feeds = [];
+      messageReceiver = new textsecure.MessageReceiver(
+        USERNAME,
+        PASSWORD,
+        mySignalingKey,
+        options
+      );
+      messageReceiver.addEventListener('message', onMessageReceived);
+      messageReceiver.addEventListener('contact', onContactReceived);
+      window.textsecure.messaging = new textsecure.MessageSender(
+        USERNAME,
+        PASSWORD
+      );
+      return;
+    }
+
+    initAPIs();
+    await initSpecialConversations();
     messageReceiver = new textsecure.MessageReceiver(
       USERNAME,
       PASSWORD,
@@ -826,6 +1560,10 @@
     messageReceiver.addEventListener('progress', onProgress);
     messageReceiver.addEventListener('configuration', onConfiguration);
     messageReceiver.addEventListener('typing', onTyping);
+
+    Whisper.events.on('endSession', source => {
+      messageReceiver.handleEndSession(source);
+    });
 
     window.Signal.AttachmentDownloads.start({
       getMessageReceiver: () => messageReceiver,
@@ -947,6 +1685,11 @@
     //   very fast, and it looks like a network blip. But we need to suppress
     //   notifications in these scenarios too. So we listen for 'reconnect' events.
     Whisper.Notifications.disable();
+
+    // Enable back notifications once most messages have been fetched
+    setTimeout(() => {
+      Whisper.Notifications.enable();
+    }, window.CONSTANTS.NOTIFICATION_ENABLE_TIMEOUT_SECONDS * 1000);
   }
   function onProgress(ev) {
     const { count } = ev;
@@ -979,26 +1722,36 @@
     }
 
     if (typingIndicators === true || typingIndicators === false) {
-      storage.put('typingIndicators', typingIndicators);
+      storage.put('typing-indicators-setting', typingIndicators);
     }
 
     if (linkPreviews === true || linkPreviews === false) {
-      storage.put('linkPreviews', linkPreviews);
+      storage.put('link-preview-setting', linkPreviews);
     }
 
     ev.confirm();
   }
 
-  function onTyping(ev) {
+  async function onTyping(ev) {
     const { typing, sender, senderDevice } = ev;
     const { groupId, started } = typing || {};
 
     // We don't do anything with incoming typing messages if the setting is disabled
-    if (!storage.get('typingIndicators')) {
+    if (!storage.get('typing-indicators-setting')) {
       return;
     }
 
-    const conversation = ConversationController.get(groupId || sender);
+    let primaryDevice = null;
+    const authorisation = await libloki.storage.getGrantAuthorisationForSecondaryPubKey(
+      sender
+    );
+    if (authorisation) {
+      primaryDevice = authorisation.primaryDevicePubKey;
+    }
+
+    const conversation = ConversationController.get(
+      groupId || primaryDevice || sender
+    );
 
     if (conversation) {
       conversation.notifyTyping({
@@ -1046,6 +1799,28 @@
       if (activeAt !== null) {
         activeAt = activeAt || Date.now();
       }
+      const ourPrimaryKey = window.storage.get('primaryDevicePubKey');
+      const ourDevices = await libloki.storage.getAllDevicePubKeysForPrimaryPubKey(
+        ourPrimaryKey
+      );
+      // TODO: We should probably just *not* send any secondary devices and
+      // just load them all and send FRs when we get the mapping
+      const isOurSecondaryDevice =
+        id !== ourPrimaryKey &&
+        ourDevices &&
+        ourDevices.some(devicePubKey => devicePubKey === id);
+
+      if (isOurSecondaryDevice) {
+        await conversation.setSecondaryStatus(true, ourPrimaryKey);
+      }
+
+      if (conversation.isFriendRequestStatusNone()) {
+        // Will be replaced with automatic friend request
+        libloki.api.sendBackgroundMessage(conversation.id);
+      } else {
+        // Accept any pending friend requests if there are any
+        conversation.onAcceptFriendRequest({ blockSync: true });
+      }
 
       if (details.profileKey) {
         const profileKey = window.Signal.Crypto.arrayBufferToBase64(
@@ -1062,11 +1837,18 @@
         }
       }
 
+      // Do not set name to allow working with lokiProfile and nicknames
       conversation.set({
-        name: details.name,
+        // name: details.name,
         color: details.color,
         active_at: activeAt,
       });
+
+      await conversation.setLokiProfile({ displayName: details.name });
+
+      if (details.nickname) {
+        await conversation.setNickname(details.nickname);
+      }
 
       // Update the conversation avatar only if new avatar exists and hash differs
       const { avatar } = details;
@@ -1212,6 +1994,14 @@
 
       const messageDescriptor = getMessageDescriptor(data);
 
+      // Funnel messages to primary device conversation if multi-device
+      const authorisation = await libloki.storage.getGrantAuthorisationForSecondaryPubKey(
+        messageDescriptor.id
+      );
+      if (authorisation) {
+        messageDescriptor.id = authorisation.primaryDevicePubKey;
+      }
+
       const { PROFILE_KEY_UPDATE } = textsecure.protobuf.DataMessage.Flags;
       // eslint-disable-next-line no-bitwise
       const isProfileUpdate = Boolean(data.message.flags & PROFILE_KEY_UPDATE);
@@ -1219,10 +2009,30 @@
         return handleProfileUpdate({ data, confirm, messageDescriptor });
       }
 
-      const message = await createMessage(data);
+      const primaryDeviceKey = window.storage.get('primaryDevicePubKey');
+      const allOurDevices = await libloki.storage.getAllDevicePubKeysForPrimaryPubKey(
+        primaryDeviceKey
+      );
+      const descriptorId = await textsecure.MessageReceiver.arrayBufferToString(
+        messageDescriptor.id
+      );
+      let message;
+      if (
+        messageDescriptor.type === 'group' &&
+        descriptorId.match(/^publicChat:/) &&
+        allOurDevices.includes(data.source)
+      ) {
+        // Public chat messages from ourselves should be outgoing
+        message = await createSentMessage(data);
+      } else {
+        message = await createMessage(data);
+      }
       const isDuplicate = await isMessageDuplicate(message);
       if (isDuplicate) {
-        window.log.warn('Received duplicate message', message.idForLogging());
+        // RSS expects duplciates, so squelch log
+        if (!descriptorId.match(/^rss:/)) {
+          window.log.warn('Received duplicate message', message.idForLogging());
+        }
         return event.confirm();
       }
 
@@ -1304,10 +2114,10 @@
 
     return new Whisper.Message({
       source: textsecure.storage.user.getNumber(),
-      sourceDevice: data.device,
+      sourceDevice: data.sourceDevice,
       sent_at: data.timestamp,
       sent_to: sentTo,
-      received_at: now,
+      received_at: data.isPublic ? data.receivedAt : now,
       conversationId: data.destination,
       type: 'outgoing',
       sent: true,
@@ -1345,13 +2155,15 @@
     let messageData = {
       source: data.source,
       sourceDevice: data.sourceDevice,
+      serverId: data.serverId,
       sent_at: data.timestamp,
       received_at: data.receivedAt || Date.now(),
       conversationId: data.source,
       unidentifiedDeliveryReceived: data.unidentifiedDeliveryReceived,
       type: 'incoming',
       unread: 1,
-      isP2p: data.isP2p,
+      isPublic: data.isPublic,
+      isRss: data.isRss,
     };
 
     if (data.friendRequest) {
@@ -1367,7 +2179,9 @@
 
     // If we don't return early here, we can get into infinite error loops. So, no
     //   delivery receipts for sealed sender errors.
-    if (isError || !data.unidentifiedDeliveryReceived) {
+
+    // Note(LOKI): don't send receipt for FR as we don't have a session yet
+    if (isError || !data.unidentifiedDeliveryReceived || data.friendRequest) {
       return message;
     }
 
@@ -1375,13 +2189,16 @@
       const { wrap, sendOptions } = ConversationController.prepareForSend(
         data.source
       );
-      await wrap(
-        textsecure.messaging.sendDeliveryReceipt(
-          data.source,
-          data.timestamp,
-          sendOptions
-        )
-      );
+      const isGroup = data && data.message && data.message.group;
+      if (!isGroup) {
+        await wrap(
+          textsecure.messaging.sendDeliveryReceipt(
+            data.source,
+            data.timestamp,
+            sendOptions
+          )
+        );
+      }
     } catch (error) {
       window.log.error(
         `Failed to send delivery receipt to ${data.source} for message ${
@@ -1395,6 +2212,46 @@
   }
 
   async function onError(ev) {
+    const noSession =
+      ev.error &&
+      ev.error.message &&
+      ev.error.message.indexOf('No record for device') === 0;
+    const pubkey = ev.proto.source;
+
+    if (noSession) {
+      const convo = await ConversationController.getOrCreateAndWait(
+        pubkey,
+        'private'
+      );
+
+      if (!convo.get('sessionRestoreSeen')) {
+        convo.set({ sessionRestoreSeen: true });
+
+        await window.Signal.Data.updateConversation(
+          convo.id,
+          convo.attributes,
+          { Conversation: Whisper.Conversation }
+        );
+
+        window.Whisper.events.trigger('showSessionRestoreConfirmation', {
+          pubkey,
+          onOk: () => {
+            convo.sendMessage('', null, null, null, null, {
+              sessionRestoration: true,
+            });
+          },
+        });
+      } else {
+        window.log.debug(`Already seen session restore for pubkey: ${pubkey}`);
+        if (ev.confirm) {
+          ev.confirm();
+        }
+      }
+
+      // We don't want to display any failed messages in the conversation:
+      return;
+    }
+
     const { error } = ev;
     window.log.error('background onError:', Errors.toLogFormat(error));
 

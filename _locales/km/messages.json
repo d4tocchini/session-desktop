@@ -553,7 +553,7 @@
         "message": "ពេលបញ្ចូលឯកសារភ្ជាប់មិន-រូបភាពមួយ ការកំណត់គឺឯកសារភ្ជាប់មួយ សម្រាប់សារមួយ។",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "អ្នកមិនអាចលាយឡំឯកសារភ្ជាប់ មិន-រូបភាព និងរូបភាព ក្នុងសារតែមួយទេ។",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "សារ",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "ស្វាគមន៍មកកាន់ Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "មានបច្ចុប្បន្នភាព Signal",
+        "message": "មានបច្ចុប្បន្នភាព Session",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "មានSignalជំនាន់ថ្មី",
+        "message": "មានSessionជំនាន់ថ្មី",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "ចុច បើក Signalឡើងវិញ ដើម្បីដំណើការបច្ចុប្បន្នភាព។",
+        "message": "ចុច បើក Sessionឡើងវិញ ដើម្បីដំណើការបច្ចុប្បន្នភាព។",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "បើកSignal ឡើងវិញ",
+        "message": "បើកSession ឡើងវិញ",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "លក្ខខណ្ឌ និងគោលនយោបាយឯកជនភាព",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

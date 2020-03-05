@@ -1,7 +1,9 @@
-/* global window, setTimeout, IDBKeyRange */
+/* global window, setTimeout, clearTimeout, IDBKeyRange, dcodeIO */
 
 const electron = require('electron');
 
+// TODO: this results in poor readability, would be
+// much better to explicitly call with `_`.
 const {
   cloneDeep,
   forEach,
@@ -9,10 +11,12 @@ const {
   isFunction,
   isObject,
   map,
-  merge,
   set,
   omit,
+  isArrayBuffer,
 } = require('lodash');
+
+const _ = require('lodash');
 
 const { base64ToArrayBuffer, arrayBufferToBase64 } = require('./crypto');
 const MessageType = require('./types/message');
@@ -88,6 +92,15 @@ module.exports = {
   removeContactSignedPreKeyByIdentityKey,
   removeAllContactSignedPreKeys,
 
+  createOrUpdatePairingAuthorisation,
+  removePairingAuthorisationForSecondaryPubKey,
+  getGrantAuthorisationForSecondaryPubKey,
+  getAuthorisationForSecondaryPubKey,
+  getGrantAuthorisationsForPrimaryPubKey,
+  getSecondaryDevicesFor,
+  getPrimaryDeviceFor,
+  getPairedDevicesFor,
+
   createOrUpdateItem,
   getItemById,
   getAllItems,
@@ -116,8 +129,15 @@ module.exports = {
 
   getAllConversations,
   getPubKeysWithFriendStatus,
+  getConversationsWithFriendStatus,
   getAllConversationIds,
   getAllPrivateConversations,
+  getAllRssFeedConversations,
+  getAllPublicConversations,
+  getPublicConversationsByServer,
+  getPubkeysInPublicConversation,
+  savePublicServerToken,
+  getPublicServerTokenByServerUrl,
   getAllGroupsInvolvingId,
 
   searchConversations,
@@ -140,6 +160,7 @@ module.exports = {
   removeAllMessagesInConversation,
 
   getMessageBySender,
+  getMessageByServerId,
   getMessageById,
   getAllMessages,
   getAllUnsentMessages,
@@ -171,6 +192,8 @@ module.exports = {
 
   removeAll,
   removeAllConfiguration,
+  removeAllConversations,
+  removeAllPrivateConversations,
 
   removeOtherData,
   cleanupOrphanedAttachments,
@@ -277,13 +300,13 @@ function _updateJob(id, data) {
     ...data,
     resolve: value => {
       _removeJob(id);
-      const end = Date.now();
-      const delta = end - start;
-      if (delta > 10) {
-        window.log.debug(
-          `SQL channel job ${id} (${fnName}) succeeded in ${end - start}ms`
-        );
-      }
+      // const end = Date.now();
+      // const delta = end - start;
+      // if (delta > 10) {
+      //   window.log.debug(
+      //     `SQL channel job ${id} (${fnName}) succeeded in ${end - start}ms`
+      //   );
+      // }
       return resolve(value);
     },
     reject: error => {
@@ -301,6 +324,11 @@ function _removeJob(id) {
   if (_DEBUG) {
     _jobs[id].complete = true;
     return;
+  }
+
+  if (_jobs[id].timer) {
+    clearTimeout(_jobs[id].timer);
+    _jobs[id].timer = null;
   }
 
   delete _jobs[id];
@@ -354,7 +382,7 @@ function makeChannel(fnName) {
         args: _DEBUG ? args : null,
       });
 
-      setTimeout(
+      _jobs[jobId].timer = setTimeout(
         () =>
           reject(new Error(`SQL channel job ${jobId} (${fnName}) timed out`)),
         DATABASE_UPDATE_TIMEOUT
@@ -570,6 +598,63 @@ async function removeAllContactSignedPreKeys() {
   await channels.removeAllContactSignedPreKeys();
 }
 
+function signatureToBase64(signature) {
+  if (signature.constructor === dcodeIO.ByteBuffer) {
+    return dcodeIO.ByteBuffer.wrap(signature).toString('base64');
+  } else if (isArrayBuffer(signature)) {
+    return arrayBufferToBase64(signature);
+  } else if (typeof signature === 'string') {
+    // assume it's already base64
+    return signature;
+  }
+  throw new Error(
+    'Invalid signature provided in createOrUpdatePairingAuthorisation. Needs to be either ArrayBuffer or ByteBuffer.'
+  );
+}
+
+async function createOrUpdatePairingAuthorisation(data) {
+  const { requestSignature, grantSignature } = data;
+
+  return channels.createOrUpdatePairingAuthorisation({
+    ...data,
+    requestSignature: signatureToBase64(requestSignature),
+    grantSignature: grantSignature ? signatureToBase64(grantSignature) : null,
+  });
+}
+
+async function removePairingAuthorisationForSecondaryPubKey(pubKey) {
+  if (!pubKey) {
+    return;
+  }
+  await channels.removePairingAuthorisationForSecondaryPubKey(pubKey);
+}
+
+async function getGrantAuthorisationForSecondaryPubKey(pubKey) {
+  return channels.getAuthorisationForSecondaryPubKey(pubKey, {
+    granted: true,
+  });
+}
+
+async function getGrantAuthorisationsForPrimaryPubKey(pubKey) {
+  return channels.getGrantAuthorisationsForPrimaryPubKey(pubKey);
+}
+
+function getAuthorisationForSecondaryPubKey(pubKey) {
+  return channels.getAuthorisationForSecondaryPubKey(pubKey);
+}
+
+function getSecondaryDevicesFor(primaryDevicePubKey) {
+  return channels.getSecondaryDevicesFor(primaryDevicePubKey);
+}
+
+function getPrimaryDeviceFor(secondaryDevicePubKey) {
+  return channels.getPrimaryDeviceFor(secondaryDevicePubKey);
+}
+
+function getPairedDevicesFor(pubKey) {
+  return channels.getPairedDevicesFor(pubKey);
+}
+
 // Items
 
 const ITEM_KEYS = {
@@ -656,15 +741,6 @@ async function getAllSessions(id) {
 
 // Conversation
 
-function setifyProperty(data, propertyName) {
-  if (!data) return data;
-  const returnData = { ...data };
-  if (Array.isArray(returnData[propertyName])) {
-    returnData[propertyName] = new Set(returnData[propertyName]);
-  }
-  return returnData;
-}
-
 async function getSwarmNodesByPubkey(pubkey) {
   return channels.getSwarmNodesByPubkey(pubkey);
 }
@@ -693,13 +769,14 @@ async function updateConversation(id, data, { Conversation }) {
   if (!existing) {
     throw new Error(`Conversation ${id} does not exist!`);
   }
-  const setData = setifyProperty(data, 'swarmNodes');
-  const setExisting = setifyProperty(existing.attributes, 'swarmNodes');
 
-  const merged = merge({}, setExisting, setData);
-  if (merged.swarmNodes instanceof Set) {
-    merged.swarmNodes = Array.from(merged.swarmNodes);
-  }
+  const merged = _.merge({}, existing.attributes, data);
+
+  // Merging is a really bad idea and not what we want here, e.g.
+  // it will take a union of old and new members and that's not
+  // what we want for member deletion, so:
+  merged.members = data.members;
+  merged.swarmNodes = data.swarmNodes;
 
   // Don't save the online status of the object
   const cleaned = omit(merged, 'isOnline');
@@ -722,8 +799,20 @@ async function _removeConversations(ids) {
   await channels.removeConversation(ids);
 }
 
+async function getConversationsWithFriendStatus(
+  status,
+  { ConversationCollection }
+) {
+  const conversations = await channels.getConversationsWithFriendStatus(status);
+
+  const collection = new ConversationCollection();
+  collection.add(conversations);
+  return collection;
+}
+
 async function getPubKeysWithFriendStatus(status) {
-  return channels.getPubKeysWithFriendStatus(status);
+  const conversations = await getConversationsWithFriendStatus(status);
+  return conversations.map(row => row.id);
 }
 
 async function getAllConversations({ ConversationCollection }) {
@@ -739,8 +828,48 @@ async function getAllConversationIds() {
   return ids;
 }
 
+async function getAllRssFeedConversations({ ConversationCollection }) {
+  const conversations = await channels.getAllRssFeedConversations();
+
+  const collection = new ConversationCollection();
+  collection.add(conversations);
+  return collection;
+}
+
+async function getAllPublicConversations({ ConversationCollection }) {
+  const conversations = await channels.getAllPublicConversations();
+
+  const collection = new ConversationCollection();
+  collection.add(conversations);
+  return collection;
+}
+
 async function getAllPrivateConversations({ ConversationCollection }) {
   const conversations = await channels.getAllPrivateConversations();
+
+  const collection = new ConversationCollection();
+  collection.add(conversations);
+  return collection;
+}
+
+async function getPubkeysInPublicConversation(id) {
+  return channels.getPubkeysInPublicConversation(id);
+}
+
+async function savePublicServerToken(data) {
+  await channels.savePublicServerToken(data);
+}
+
+async function getPublicServerTokenByServerUrl(serverUrl) {
+  const token = await channels.getPublicServerTokenByServerUrl(serverUrl);
+  return token;
+}
+
+async function getPublicConversationsByServer(
+  server,
+  { ConversationCollection }
+) {
+  const conversations = await channels.getPublicConversationsByServer(server);
 
   const collection = new ConversationCollection();
   collection.add(conversations);
@@ -864,6 +993,15 @@ async function removeMessage(id, { Message }) {
 // Note: this method will not clean up external files, just delete from SQL
 async function _removeMessages(ids) {
   await channels.removeMessage(ids);
+}
+
+async function getMessageByServerId(serverId, conversationId, { Message }) {
+  const message = await channels.getMessageByServerId(serverId, conversationId);
+  if (!message) {
+    return null;
+  }
+
+  return new Message(message);
 }
 
 async function getMessageById(id, { Message }) {
@@ -1053,6 +1191,14 @@ async function removeAll() {
 
 async function removeAllConfiguration() {
   await channels.removeAllConfiguration();
+}
+
+async function removeAllConversations() {
+  await channels.removeAllConversations();
+}
+
+async function removeAllPrivateConversations() {
+  await channels.removeAllPrivateConversations();
 }
 
 async function cleanupOrphanedAttachments() {

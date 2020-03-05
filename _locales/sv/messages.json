@@ -553,7 +553,7 @@
         "message": "När man inkluderar bilagor som inte är bilder, är begränsningen en bilaga per meddelande.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Du kan inte blanda bilagor som både är, och inte är, bilder i ett meddelande.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Meddelanden",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Välkommen till Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Uppdatering för Signal tillgänglig",
+        "message": "Uppdatering för Session tillgänglig",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Det finns en ny version av Signal tillgänglig.",
+        "message": "Det finns en ny version av Session tillgänglig.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Vänligen starta om Signal för att uppdatera",
+        "message": "Vänligen starta om Session för att uppdatera",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Starta om Signal",
+        "message": "Starta om Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Licens- och sekretessvillkor",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

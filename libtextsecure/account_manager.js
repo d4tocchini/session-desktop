@@ -2,6 +2,8 @@
   window,
   textsecure,
   libsignal,
+  libloki,
+  lokiFileServerAPI,
   mnemonic,
   btoa,
   Signal,
@@ -10,9 +12,9 @@
   dcodeIO,
   StringView,
   log,
-  storage,
   Event,
-  ConversationController
+  ConversationController,
+  Whisper
 */
 
 /* eslint-disable more/no-then */
@@ -123,7 +125,13 @@
       let generateKeypair;
       if (mnemonic) {
         generateKeypair = () => {
-          const seedHex = window.mnemonic.mn_decode(mnemonic, mnemonicLanguage);
+          let seedHex = window.mnemonic.mn_decode(mnemonic, mnemonicLanguage);
+          // handle shorter than 32 bytes seeds
+          const privKeyHexLength = 32 * 2;
+          if (seedHex.length !== privKeyHexLength) {
+            seedHex = seedHex.concat(seedHex);
+            seedHex = seedHex.substring(0, privKeyHexLength);
+          }
           const privKeyHex = window.mnemonic.sc_reduce32(seedHex);
           const privKey = dcodeIO.ByteBuffer.wrap(
             privKeyHex,
@@ -387,7 +395,8 @@
         textsecure.storage.remove('number_id'),
         textsecure.storage.remove('device_name'),
         textsecure.storage.remove('userAgent'),
-        textsecure.storage.remove('read-receipts-setting'),
+        textsecure.storage.remove('read-receipt-setting'),
+        textsecure.storage.remove('typing-indicators-setting'),
         textsecure.storage.remove('regionCode'),
       ]);
 
@@ -419,6 +428,9 @@
         Boolean(readReceipts)
       );
 
+      // Enable typing indicators by default
+      await textsecure.storage.put('typing-indicators-setting', Boolean(true));
+
       await textsecure.storage.user.setNumberAndDeviceId(pubKeyString, 1);
       await textsecure.storage.put('regionCode', null);
     },
@@ -427,12 +439,18 @@
 
       window.log.info('clearing all sessions, prekeys, and signed prekeys');
       await Promise.all([
-        store.clearPreKeyStore(),
         store.clearContactPreKeysStore(),
-        store.clearSignedPreKeysStore(),
         store.clearContactSignedPreKeysStore(),
         store.clearSessionStore(),
       ]);
+      // During secondary device registration we need to keep our prekeys sent
+      // to other pubkeys
+      if (textsecure.storage.get('secondaryDeviceStatus') !== 'ongoing') {
+        await Promise.all([
+          store.clearPreKeyStore(),
+          store.clearSignedPreKeysStore(),
+        ]);
+      }
     },
     // Takes the same object returned by generateKeys
     async confirmKeys(keys) {
@@ -513,8 +531,11 @@
       });
     },
     async generateMnemonic(language = 'english') {
-      const keys = await libsignal.KeyHelper.generateIdentityKeyPair();
-      const hex = StringView.arrayBufferToHex(keys.privKey);
+      // Note: 4 bytes are converted into 3 seed words, so length 12 seed words
+      // (13 - 1 checksum) are generated using 12 * 4 / 3 = 16 bytes.
+      const seedSize = 16;
+      const seed = window.Signal.Crypto.getRandomBytes(seedSize);
+      const hex = StringView.arrayBufferToHex(seed);
       return mnemonic.mn_encode(hex, language);
     },
     getCurrentMnemonic() {
@@ -523,22 +544,111 @@
     saveMnemonic(mnemonic) {
       return textsecure.storage.put('mnemonic', mnemonic);
     },
-    async registrationDone(number, profileName) {
+    async registrationDone(number, displayName) {
       window.log.info('registration done');
 
+      if (!textsecure.storage.get('secondaryDeviceStatus')) {
+        // We have registered as a primary device
+        textsecure.storage.put('primaryDevicePubKey', number);
+      }
       // Ensure that we always have a conversation for ourself
       const conversation = await ConversationController.getOrCreateAndWait(
         number,
         'private'
       );
-
-      await storage.setProfileName(profileName);
-
-      // Update the conversation if we have it
-      const newProfile = storage.getLocalProfile();
-      await conversation.setProfile(newProfile);
+      await conversation.setLokiProfile({ displayName });
 
       this.dispatchEvent(new Event('registration'));
+    },
+    async requestPairing(primaryDevicePubKey) {
+      // throws if invalid
+      this.validatePubKeyHex(primaryDevicePubKey);
+      // we need a conversation for sending a message
+      await ConversationController.getOrCreateAndWait(
+        primaryDevicePubKey,
+        'private'
+      );
+      const ourPubKey = textsecure.storage.user.getNumber();
+      if (primaryDevicePubKey === ourPubKey) {
+        throw new Error('Cannot request to pair with ourselves');
+      }
+      const requestSignature = await libloki.crypto.generateSignatureForPairing(
+        primaryDevicePubKey,
+        libloki.crypto.PairingType.REQUEST
+      );
+      const authorisation = {
+        primaryDevicePubKey,
+        secondaryDevicePubKey: ourPubKey,
+        requestSignature,
+      };
+      await libloki.api.sendPairingAuthorisation(
+        authorisation,
+        primaryDevicePubKey
+      );
+    },
+    async authoriseSecondaryDevice(secondaryDevicePubKey) {
+      const ourPubKey = textsecure.storage.user.getNumber();
+      if (secondaryDevicePubKey === ourPubKey) {
+        throw new Error(
+          'Cannot register primary device pubkey as secondary device'
+        );
+      }
+
+      // throws if invalid
+      this.validatePubKeyHex(secondaryDevicePubKey);
+      // we need a conversation for sending a message
+      const secondaryConversation = await ConversationController.getOrCreateAndWait(
+        secondaryDevicePubKey,
+        'private'
+      );
+      const grantSignature = await libloki.crypto.generateSignatureForPairing(
+        secondaryDevicePubKey,
+        libloki.crypto.PairingType.GRANT
+      );
+      const existingAuthorisation = await libloki.storage.getAuthorisationForSecondaryPubKey(
+        secondaryDevicePubKey
+      );
+      if (!existingAuthorisation) {
+        throw new Error(
+          'authoriseSecondaryDevice: request signature missing from database!'
+        );
+      }
+      const { requestSignature } = existingAuthorisation;
+      const authorisation = {
+        primaryDevicePubKey: ourPubKey,
+        secondaryDevicePubKey,
+        requestSignature,
+        grantSignature,
+      };
+      // Update authorisation in database with the new grant signature
+      await libloki.storage.savePairingAuthorisation(authorisation);
+      await lokiFileServerAPI.updateOurDeviceMapping();
+      await libloki.api.sendPairingAuthorisation(
+        authorisation,
+        secondaryDevicePubKey
+      );
+      // Always be friends with secondary devices
+      await secondaryConversation.setFriendRequestStatus(
+        window.friends.friendRequestStatusEnum.friends,
+        {
+          blockSync: true,
+        }
+      );
+      // Send sync messages
+      const conversations = window.getConversations().models;
+      textsecure.messaging.sendContactSyncMessage(conversations);
+      textsecure.messaging.sendGroupSyncMessage(conversations);
+      textsecure.messaging.sendOpenGroupsSyncMessage(conversations);
+    },
+    validatePubKeyHex(pubKey) {
+      const c = new Whisper.Conversation({
+        id: pubKey,
+        type: 'private',
+      });
+      const validationError = c.validateNumber();
+      if (validationError) {
+        throw new Error(validationError);
+      }
     },
   });
   textsecure.AccountManager = AccountManager;

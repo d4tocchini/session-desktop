@@ -49,6 +49,11 @@
       handleRequest = request => request.respond(404, 'Not found');
     }
     let connected = true;
+    this.calledStop = false;
+    let resolveStopPolling;
+    const stopPolling = new Promise(res => {
+      resolveStopPolling = res;
+    });
 
     this.handleMessage = (message, options = {}) => {
       try {
@@ -78,32 +83,48 @@
       }
     };
 
-    // Note: calling callback(false) is currently not necessary
-    this.pollServer = async callback => {
+    this.pollServer = async () => {
       // This blocking call will return only when all attempts
       // at reaching snodes are exhausted or a DNS error occured
       try {
-        await server.startLongPolling(NUM_CONCURRENT_CONNECTIONS, messages => {
-          connected = true;
-          callback(connected);
-          messages.forEach(message => {
-            const { data } = message;
-            this.handleMessage(data);
-          });
-        });
+        await server.startLongPolling(
+          NUM_CONCURRENT_CONNECTIONS,
+          stopPolling,
+          messages => {
+            connected = true;
+            messages.forEach(message => {
+              const { data } = message;
+              this.handleMessage(data);
+            });
+          }
+        );
       } catch (e) {
         // we'll try again anyway
+        window.log.error('http-resource pollServer error', e.code, e.message);
+      }
+
+      if (this.calledStop) {
+        return;
       }
 
       connected = false;
       // Exhausted all our snodes urls, trying again later from scratch
       setTimeout(() => {
-        this.pollServer(callback);
+        window.log.info(
+          `Exhausted all our snodes urls, trying again in ${EXHAUSTED_SNODES_RETRY_DELAY /
+            1000}s from scratch`
+        );
+        this.pollServer();
       }, EXHAUSTED_SNODES_RETRY_DELAY);
     };
 
     this.isConnected = function isConnected() {
       return connected;
+    };
+
+    this.close = () => {
+      this.calledStop = true;
+      resolveStopPolling(true);
     };
   };
 })();

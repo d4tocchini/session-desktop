@@ -2,7 +2,6 @@ import React from 'react';
 // import classNames from 'classnames';
 import { compact, flatten } from 'lodash';
 
-import { ContactName } from './ContactName';
 import { Intl } from '../Intl';
 import { LocalizerType } from '../../types/Util';
 
@@ -15,7 +14,7 @@ interface Contact {
 }
 
 interface Change {
-  type: 'add' | 'remove' | 'name' | 'general';
+  type: 'add' | 'remove' | 'name' | 'general' | 'kicked';
   isMe: boolean;
   newName?: string;
   contacts?: Array<Contact>;
@@ -39,12 +38,7 @@ export class GroupNotification extends React.Component<Props> {
               key={`external-${contact.phoneNumber}`}
               className="module-group-notification__contact"
             >
-              <ContactName
-                i18n={i18n}
-                phoneNumber={contact.phoneNumber}
-                profileName={contact.profileName}
-                name={contact.name}
-              />
+              {contact.profileName || contact.phoneNumber}
             </span>
           );
 
@@ -55,7 +49,7 @@ export class GroupNotification extends React.Component<Props> {
 
     switch (type) {
       case 'name':
-        return i18n('titleIsNow', [newName || '']);
+        return `${i18n('titleIsNow', [newName || ''])}.`;
       case 'add':
         if (!contacts || !contacts.length) {
           throw new Error('Group update is missing contacts');
@@ -78,6 +72,21 @@ export class GroupNotification extends React.Component<Props> {
           contacts.length > 1 ? 'multipleLeftTheGroup' : 'leftTheGroup';
 
         return <Intl i18n={i18n} id={leftKey} components={[people]} />;
+      case 'kicked':
+        if (isMe) {
+          return i18n('youGotKickedFromGroup');
+        }
+
+        if (!contacts || !contacts.length) {
+          throw new Error('Group update is missing contacts');
+        }
+
+        const kickedKey =
+          contacts.length > 1
+            ? 'multipleKickedFromTheGroup'
+            : 'kickedFromTheGroup';
+
+        return <Intl i18n={i18n} id={kickedKey} components={[people]} />;
       case 'general':
         return i18n('updatedTheGroup');
       default:

@@ -2,6 +2,8 @@ export type RenderTextCallbackType = (
   options: {
     text: string;
     key: number;
+    isGroup?: boolean;
+    convoId?: string;
   }
 ) => JSX.Element | string;
 
@@ -22,5 +24,5 @@ export type ColorType =
 export enum Colors {
   OFFLINE = '#3d3e44',
   OFFLINE_LIGHT = '#cccece',
-  ONLINE = '#1c8260',
+  ONLINE = '#00f782',
 }

@@ -553,7 +553,7 @@
         "message": "Quando includi un allegato che non è un'immagine, il limite è un solo allegato per messaggio.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Non puoi allegare insieme immagini ad altri file in un messaggio.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Messaggi",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Benvenuto in Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Aggiornamento Signal disponibile",
+        "message": "Aggiornamento Session disponibile",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "È disponibile una nuova versione di Signal.",
+        "message": "È disponibile una nuova versione di Session.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Premi \"Riavvia Signal\" per applicare gli aggiornamenti.",
+        "message": "Premi \"Riavvia Session\" per applicare gli aggiornamenti.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Riavvia Signal",
+        "message": "Riavvia Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Termini e privacy policy",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

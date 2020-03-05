@@ -69,6 +69,15 @@ audio {
 button {
   cursor: pointer;
   font-size: inherit;
+
+  &[disabled='disabled'] {
+    &,
+    &:hover {
+      opacity: 0.5;
+      box-shadow: none;
+      cursor: default;
+    }
+  }
 }
 button.grey {
   border-radius: $border-radius;
@@ -714,6 +723,12 @@ $loading-height: 16px;
   .button {
     background: $color-loki-green-gradient;
     border-radius: 100px;
+
+    &:disabled,
+    &:disabled:hover {
+      background: $color-loki-dark-gray;
+      cursor: default;
+    }
   }
 
   #mnemonic-display {
@@ -759,7 +774,7 @@ $loading-height: 16px;
   .select-container {
     position: relative;
     display: block;
-    width: 9em;
+    width: 13em;
     line-height: 2.8;
     background: white;
     overflow: hidden;
@@ -806,7 +821,8 @@ $loading-height: 16px;
     }
   }
 
-  .password-inputs {
+  .password-inputs,
+  .standalone-mnemonic-inputs {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -859,4 +875,18 @@ $loading-height: 16px;
 
 .inbox {
   position: relative;
+}
+
+.qr-dialog {
+  .content {
+    width: 300px !important;
+    max-width: none !important;
+    min-width: auto !important;
+  }
+
+  #qr {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1em;
+  }
 }

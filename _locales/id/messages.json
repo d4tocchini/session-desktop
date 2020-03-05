@@ -553,7 +553,7 @@
         "message": "Ketika menyertakan lampiran bukan gambar, batasnya adalah satu lampiran per pesan.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Anda tidak bisa mencampur lampiran gambar dan bukan gambar dalam satu pesan.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Pesan",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Selamat datang di Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Tersedia Signal versi terbaru",
+        "message": "Tersedia Session versi terbaru",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Tersedia versi terbaru Signal.",
+        "message": "Tersedia versi terbaru Session.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Tekan memulai awal Signal untuk mendapatkan versi terbaru.",
+        "message": "Tekan memulai awal Session untuk mendapatkan versi terbaru.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Mulai ulang Signal",
+        "message": "Mulai ulang Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Syarat & Kebijakan Privasi",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

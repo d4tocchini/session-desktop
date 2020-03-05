@@ -1,4 +1,6 @@
-/* global
+/*
+  global
+  $
   ConversationController,
   extension,
   ConversationController
@@ -20,7 +22,40 @@
     className: 'conversation-stack',
     open(conversation) {
       const id = `conversation-${conversation.cid}`;
-      if (id !== this.el.firstChild.id) {
+      const container = $('#main-view .conversation-stack');
+
+      // Has been opened since app start, but not focussed
+      const conversationExists = container.children(`#${id}`).length > 0;
+      // Is focussed
+      const conversationOpened = container.children().first().id === id;
+
+      // To limit the size of the DOM for speed
+      const maxNumConversations = 10;
+      const numConversations = container
+        .children()
+        .not('.conversation.placeholder').length;
+      const shouldTrimConversations = numConversations > maxNumConversations;
+
+      if (shouldTrimConversations) {
+        // Removes conversation which has been hidden the longest
+        container.children()[numConversations - 1].remove();
+      }
+
+      if (conversationExists) {
+        // User opened conversation, move it to top of stack, rather than re-rendering
+        const conversations = container
+          .children()
+          .not('.conversation.placeholder');
+        container
+          .children(`#${id}`)
+          .first()
+          .insertBefore(conversations.first());
+        conversation.trigger('opened');
+
+        return;
+      }
+
+      if (!conversationOpened) {
         this.$el
           .first()
           .find('video, audio')
@@ -33,46 +68,42 @@
             model: conversation,
             window: this.model.window,
           });
+          view.view.resetScrollPosition();
+
           // eslint-disable-next-line prefer-destructuring
           $el = view.$el;
         }
-        $el.prependTo(this.el);
+
+        container.prepend($el);
       }
       conversation.trigger('opened');
     },
     close(conversation) {
-      const $el = this.$(`#conversation-${conversation.cid}`);
+      const $el = $(`#conversation-${conversation.cid}`);
       if ($el && $el.length > 0) {
         $el.remove();
       }
     },
     showToast({ message }) {
-      const toast = new Whisper.MessageToastView({
-        message,
+      window.pushToast({
+        title: message,
+        type: 'success',
       });
-      toast.$el.appendTo(this.$el);
-      toast.render();
     },
     showConfirmationDialog({ title, message, onOk, onCancel }) {
-      const dialog = new Whisper.ConfirmationDialogView({
+      window.confirmationDialog({
         title,
         message,
         resolve: onOk,
         reject: onCancel,
       });
-      this.el.append(dialog.el);
     },
   });
 
   Whisper.AppLoadingScreen = Whisper.View.extend({
     templateName: 'app-loading-screen',
     className: 'app-loading-screen',
-    updateProgress(count) {
-      if (count > 0) {
-        const message = i18n('loadingMessages', count.toString());
-        this.$('.message').text(message);
-      }
-    },
+    updateProgress() {},
     render_attributes: {
       message: i18n('loading'),
     },
@@ -91,6 +122,11 @@
         model: { window: options.window },
       });
 
+      if (!window.storage.get('betaReleaseDisclaimerAccepted')) {
+        // Beta disclaimer disabled.
+        // this.showBetaReleaseDisclaimer();
+      }
+
       if (!options.initialLoadComplete) {
         this.appLoadingScreen = new Whisper.AppLoadingScreen();
         this.appLoadingScreen.render();
@@ -100,6 +136,14 @@
 
       // Inbox
       const inboxCollection = getInboxCollection();
+
+      // ConversationCollection
+      const conversations = getConversations();
+      this.listenTo(conversations, 'remove', conversation => {
+        if (this.conversation_stack) {
+          this.conversation_stack.close(conversation);
+        }
+      });
 
       this.listenTo(inboxCollection, 'messageError', () => {
         if (this.networkStatusView) {
@@ -112,18 +156,20 @@
         .find('.network-status-container')
         .append(this.networkStatusView.render().el);
 
-      if (extension.expired()) {
-        const banner = new Whisper.ExpiredAlertBanner().render();
-        banner.$el.prependTo(this.$el);
-        this.$el.addClass('expired');
-      }
+      extension.expired(expired => {
+        if (expired) {
+          const banner = new Whisper.ExpiredAlertBanner().render();
+          banner.$el.prependTo(this.$el);
+          this.$el.addClass('expired');
+        }
+      });
 
       // FIXME: Fix this for new react views
       this.updateInboxSectionUnread();
       this.setupLeftPane();
     },
     render_attributes: {
-      welcomeToSignal: i18n('welcomeToSignal'),
+      welcomeToSession: i18n('welcomeToSession'),
       selectAContact: i18n('selectAContact'),
     },
     events: {
@@ -143,7 +189,10 @@
         },
         user: {
           regionCode: window.storage.get('regionCode'),
-          ourNumber: textsecure.storage.user.getNumber(),
+          ourNumber:
+            window.storage.get('primaryDevicePubKey') ||
+            textsecure.storage.user.getNumber(),
+          isSecondaryDevice: !!window.storage.get('isSecondaryDevice'),
           i18n: window.i18n,
         },
       };
@@ -280,6 +329,8 @@
       $target.toggleClass('section-toggle-visible');
     },
     async openConversation(id, messageId) {
+      // If we call this to create a new conversation, it can only be private
+      // (group conversations are created elsewhere)
       const conversation = await ConversationController.getOrCreateAndWait(
         id,
         'private'
@@ -290,7 +341,7 @@
       }
 
       if (conversation) {
-        conversation.updateProfile();
+        conversation.updateProfileName();
       }
 
       this.conversation_stack.open(conversation);
@@ -336,11 +387,15 @@
       toast.$el.appendTo(this.$('.gutter'));
       toast.render();
     },
+    showBetaReleaseDisclaimer() {
+      const dialog = new Whisper.BetaReleaseDisclaimer();
+      this.el.append(dialog.el);
+    },
   });
 
   Whisper.ExpiredAlertBanner = Whisper.View.extend({
     templateName: 'expired_alert',
-    className: 'expiredAlert clearfix',
+    className: 'expiredAlert',
     render_attributes() {
       return {
         expiredWarning: i18n('expiredWarning'),

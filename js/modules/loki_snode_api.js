@@ -1,99 +1,115 @@
 /* eslint-disable class-methods-use-this */
-/* global window, ConversationController */
+/* global window, ConversationController, _, log */
 
 const is = require('@sindresorhus/is');
-const dns = require('dns');
-const process = require('process');
-const { rpc } = require('./loki_rpc');
+const { lokiRpc } = require('./loki_rpc');
 
-// Will be raised (to 3?) when we get more nodes
-const MINIMUM_SWARM_NODES = 1;
-
-const resolve4 = url =>
-  new Promise((resolve, reject) => {
-    dns.resolve4(url, (err, ip) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(ip);
-      }
-    });
-  });
-
-const resolveCname = url =>
-  new Promise((resolve, reject) => {
-    dns.resolveCname(url, (err, address) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(address[0]);
-      }
-    });
-  });
+const RANDOM_SNODES_TO_USE = 3;
 
 class LokiSnodeAPI {
-  constructor({ serverUrl, localUrl, snodeServerPort }) {
+  constructor({ serverUrl, localUrl }) {
     if (!is.string(serverUrl)) {
       throw new Error('WebAPI.initialize: Invalid server url');
     }
-    this.serverUrl = serverUrl;
-    this.localUrl = localUrl;
-    this.snodeServerPort = snodeServerPort ? `:${snodeServerPort}` : '';
+    this.serverUrl = serverUrl; // random.snode
+    this.localUrl = localUrl; // localhost.loki
+    this.randomSnodePool = [];
     this.swarmsPendingReplenish = {};
-    this.ourSwarmNodes = {};
-    this.contactSwarmNodes = {};
-    // When we package lokinet with messenger we can ensure this ip is correct
-    if (process.platform === 'win32') {
-      dns.setServers(['127.0.0.1']);
-    }
   }
 
-  async getMyLokiIp() {
-    try {
-      const address = await resolveCname(this.localUrl);
-      return resolve4(address);
-    } catch (e) {
-      throw new window.textsecure.LokiIpError(
-        'Failed to resolve localhost.loki',
-        e
-      );
-    }
-  }
-
-  async getMyLokiAddress() {
-    /* resolve our local loki address */
-    return resolveCname(this.localUrl);
-  }
-
-  getRandomSnodeAddress() {
+  async getRandomSnodeAddress() {
     /* resolve random snode */
-    return resolveCname(this.serverUrl);
+    if (this.randomSnodePool.length === 0) {
+      // allow exceptions to pass through upwards
+      await this.initialiseRandomPool();
+    }
+    if (this.randomSnodePool.length === 0) {
+      throw new window.textsecure.SeedNodeError('Invalid seed node response');
+    }
+    return this.randomSnodePool[
+      Math.floor(Math.random() * this.randomSnodePool.length)
+    ];
   }
 
-  async unreachableNode(pubKey, nodeUrl) {
-    if (pubKey === window.textsecure.storage.user.getNumber()) {
-      delete this.ourSwarmNodes[nodeUrl];
-      return;
+  async initialiseRandomPool(
+    seedNodes = [...window.seedNodeList],
+    consecutiveErrors = 0
+  ) {
+    const params = {
+      limit: 20,
+      active_only: true,
+      fields: {
+        public_ip: true,
+        storage_port: true,
+        pubkey_x25519: true,
+        pubkey_ed25519: true,
+      },
+    };
+    const seedNode = seedNodes.splice(
+      Math.floor(Math.random() * seedNodes.length),
+      1
+    )[0];
+    let snodes = [];
+    try {
+      const response = await lokiRpc(
+        `http://${seedNode.ip}`,
+        seedNode.port,
+        'get_n_service_nodes',
+        params,
+        {}, // Options
+        '/json_rpc' // Seed request endpoint
+      );
+      // Filter 0.0.0.0 nodes which haven't submitted uptime proofs
+      snodes = response.result.service_node_states.filter(
+        snode => snode.public_ip !== '0.0.0.0'
+      );
+      this.randomSnodePool = snodes.map(snode => ({
+        ip: snode.public_ip,
+        port: snode.storage_port,
+        pubkey_x25519: snode.pubkey_x25519,
+        pubkey_ed25519: snode.pubkey_ed25519,
+      }));
+    } catch (e) {
+      log.warn('initialiseRandomPool error', e.code, e.message);
+      if (consecutiveErrors < 3) {
+        // retry after a possible delay
+        setTimeout(() => {
+          log.info(
+            'Retrying initialising random snode pool, try #',
+            consecutiveErrors
+          );
+          this.initialiseRandomPool(seedNodes, consecutiveErrors + 1);
+        }, consecutiveErrors * consecutiveErrors * 5000);
+      } else {
+        log.error('Giving up trying to contact seed node');
+        if (snodes.length === 0) {
+          throw new window.textsecure.SeedNodeError(
+            'Failed to contact seed node'
+          );
+        }
+      }
     }
+  }
 
+  // nodeUrl is like 9hrje1bymy7hu6nmtjme9idyu3rm8gr3mkstakjyuw1997t7w4ny.snode
+  async unreachableNode(pubKey, nodeUrl) {
     const conversation = ConversationController.get(pubKey);
     const swarmNodes = [...conversation.get('swarmNodes')];
-    if (swarmNodes.includes(nodeUrl)) {
-      const filteredNodes = swarmNodes.filter(node => node !== nodeUrl);
-      await conversation.updateSwarmNodes(filteredNodes);
-      delete this.contactSwarmNodes[nodeUrl];
-    }
+    const filteredNodes = swarmNodes.filter(
+      node => node.address !== nodeUrl && node.ip !== nodeUrl
+    );
+    await conversation.updateSwarmNodes(filteredNodes);
   }
 
-  async updateLastHash(nodeUrl, lastHash, expiresAt) {
-    await window.Signal.Data.updateLastHash({ nodeUrl, lastHash, expiresAt });
-    if (!this.ourSwarmNodes[nodeUrl]) {
-      this.ourSwarmNodes[nodeUrl] = {
-        lastHash,
-      };
-    } else {
-      this.ourSwarmNodes[nodeUrl].lastHash = lastHash;
-    }
+  markRandomNodeUnreachable(snode) {
+    this.randomSnodePool = _.without(
+      this.randomSnodePool,
+      _.find(this.randomSnodePool, { ip: snode.ip, port: snode.port })
+    );
+  }
+
+  async updateLastHash(snode, hash, expiresAt) {
+    await window.Signal.Data.updateLastHash({ snode, hash, expiresAt });
   }
 
   getSwarmNodesForPubKey(pubKey) {
@@ -110,8 +126,10 @@ class LokiSnodeAPI {
 
   async updateSwarmNodes(pubKey, newNodes) {
     try {
+      const filteredNodes = newNodes.filter(snode => snode.ip !== '0.0.0.0');
       const conversation = ConversationController.get(pubKey);
-      await conversation.updateSwarmNodes(newNodes);
+      await conversation.updateSwarmNodes(filteredNodes);
+      return filteredNodes;
     } catch (e) {
       throw new window.textsecure.ReplayableError({
         message: 'Could not get conversation',
@@ -119,32 +137,10 @@ class LokiSnodeAPI {
     }
   }
 
-  async updateOurSwarmNodes(newNodes) {
-    this.ourSwarmNodes = {};
-    const ps = newNodes.map(async url => {
-      const lastHash = await window.Signal.Data.getLastHashBySnode(url);
-      this.ourSwarmNodes[url] = {
-        lastHash,
-      };
-    });
-    await Promise.all(ps);
-  }
-
-  async getOurSwarmNodes() {
-    if (
-      !this.ourSwarmNodes ||
-      Object.keys(this.ourSwarmNodes).length < MINIMUM_SWARM_NODES
-    ) {
-      const ourKey = window.textsecure.storage.user.getNumber();
-      const nodeAddresses = await this.getSwarmNodes(ourKey);
-      await this.updateOurSwarmNodes(nodeAddresses);
-    }
-    return { ...this.ourSwarmNodes };
-  }
-
   async refreshSwarmNodesForPubKey(pubKey) {
     const newNodes = await this.getFreshSwarmNodes(pubKey);
-    this.updateSwarmNodes(pubKey, newNodes);
+    const filteredNodes = this.updateSwarmNodes(pubKey, newNodes);
+    return filteredNodes;
   }
 
   async getFreshSwarmNodes(pubKey) {
@@ -154,6 +150,7 @@ class LokiSnodeAPI {
         try {
           newSwarmNodes = await this.getSwarmNodes(pubKey);
         } catch (e) {
+          log.error('getFreshSwarmNodes error', e.code, e.message);
           // TODO: Handle these errors sensibly
           newSwarmNodes = [];
         }
@@ -165,19 +162,63 @@ class LokiSnodeAPI {
     return newSwarmNodes;
   }
 
-  async getSwarmNodes(pubKey) {
-    // TODO: Hit multiple random nodes and merge lists?
-    const nodeUrl = await this.getRandomSnodeAddress();
-
-    const result = await rpc(
-      `http://${nodeUrl}`,
-      this.snodeServerPort,
-      'get_snodes_for_pubkey',
-      {
-        pubKey,
+  async getSnodesForPubkey(snode, pubKey) {
+    try {
+      const result = await lokiRpc(
+        `https://${snode.ip}`,
+        snode.port,
+        'get_snodes_for_pubkey',
+        {
+          pubKey,
+        },
+        {},
+        '/storage_rpc/v1',
+        snode
+      );
+      if (!result) {
+        log.warn(
+          `getSnodesForPubkey lokiRpc on ${snode.ip}:${
+            snode.port
+          } returned falsish value`,
+          result
+        );
+        return [];
       }
+      const snodes = result.snodes.filter(tSnode => tSnode.ip !== '0.0.0.0');
+      return snodes;
+    } catch (e) {
+      log.error(
+        'getSnodesForPubkey error',
+        e.code,
+        e.message,
+        `for ${snode.ip}:${snode.port}`
+      );
+      this.markRandomNodeUnreachable(snode);
+      return [];
+    }
+  }
+
+  async getSwarmNodes(pubKey) {
+    const snodes = [];
+    const questions = [...Array(RANDOM_SNODES_TO_USE).keys()];
+    await Promise.all(
+      questions.map(async () => {
+        // allow exceptions to pass through upwards
+        const rSnode = await this.getRandomSnodeAddress();
+        const resList = await this.getSnodesForPubkey(rSnode, pubKey);
+        // should we only activate entries that are in all results?
+        resList.map(item => {
+          const hasItem = snodes.some(
+            hItem => item.ip === hItem.ip && item.port === hItem.port
+          );
+          if (!hasItem) {
+            snodes.push(item);
+          }
+          return true;
+        });
+      })
     );
-    return result.snodes;
+    return snodes;
   }
 }
 

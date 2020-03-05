@@ -1,11 +1,12 @@
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-loop-func */
-/* global log, dcodeIO, window, callWorker, lokiP2pAPI, lokiSnodeAPI, textsecure */
+/* global log, dcodeIO, window, callWorker, lokiSnodeAPI, textsecure */
 
 const _ = require('lodash');
-const { rpc } = require('./loki_rpc');
+const { lokiRpc } = require('./loki_rpc');
 
-const DEFAULT_CONNECTIONS = 2;
+const DEFAULT_CONNECTIONS = 3;
+const MAX_ACCEPTABLE_FAILURES = 1;
 const LOKI_LONGPOLL_HEADER = 'X-Loki-Long-Poll';
 
 function sleepFor(time) {
@@ -37,79 +38,60 @@ const calcNonce = (messageEventData, pubKey, data64, timestamp, ttl) => {
   return callWorker('calcPoW', timestamp, ttl, pubKey, data64, difficulty);
 };
 
-const trySendP2p = async (pubKey, data64, isPing, messageEventData) => {
-  const p2pDetails = lokiP2pAPI.getContactP2pDetails(pubKey);
-  if (!p2pDetails || (!isPing && !p2pDetails.isOnline)) {
-    return false;
-  }
-  try {
-    const port = p2pDetails.port ? `:${p2pDetails.port}` : '';
-
-    await rpc(p2pDetails.address, port, 'store', {
-      data: data64,
-    });
-    lokiP2pAPI.setContactOnline(pubKey);
-    window.Whisper.events.trigger('p2pMessageSent', messageEventData);
-    if (isPing) {
-      log.info(`Successfully pinged ${pubKey}`);
-    } else {
-      log.info(`Successful p2p message to ${pubKey}`);
-    }
-    return true;
-  } catch (e) {
-    lokiP2pAPI.setContactOffline(pubKey);
-    if (isPing) {
-      // If this was just a ping, we don't bother sending to storage server
-      log.warn('Ping failed, contact marked offline', e);
-      return true;
-    }
-    log.warn('Failed to send P2P message, falling back to storage', e);
-    return false;
-  }
-};
-
 class LokiMessageAPI {
-  constructor({ snodeServerPort }) {
-    this.snodeServerPort = snodeServerPort ? `:${snodeServerPort}` : '';
+  constructor(ourKey) {
     this.jobQueue = new window.JobQueue();
-    this.sendingSwarmNodes = {};
+    this.sendingData = {};
+    this.ourKey = ourKey;
   }
 
   async sendMessage(pubKey, data, messageTimeStamp, ttl, options = {}) {
-    const { isPing = false, numConnections = DEFAULT_CONNECTIONS } = options;
+    const {
+      isPublic = false,
+      numConnections = DEFAULT_CONNECTIONS,
+      publicSendData = null,
+    } = options;
     // Data required to identify a message in a conversation
     const messageEventData = {
       pubKey,
       timestamp: messageTimeStamp,
     };
 
-    const data64 = dcodeIO.ByteBuffer.wrap(data).toString('base64');
-    const p2pSuccess = await trySendP2p(
-      pubKey,
-      data64,
-      isPing,
-      messageEventData
-    );
-    if (p2pSuccess) {
+    if (isPublic) {
+      if (!publicSendData) {
+        throw new window.textsecure.PublicChatError(
+          'Missing public send data for public chat message'
+        );
+      }
+      const res = await publicSendData.sendMessage(data, messageTimeStamp);
+      if (res === false) {
+        throw new window.textsecure.PublicChatError(
+          'Failed to send public chat message'
+        );
+      }
+      messageEventData.serverId = res;
+      window.Whisper.events.trigger('publicMessageSent', messageEventData);
       return;
     }
+
+    const data64 = dcodeIO.ByteBuffer.wrap(data).toString('base64');
 
     const timestamp = Date.now();
     const nonce = await calcNonce(
       messageEventData,
-      pubKey,
+      window.getStoragePubKey(pubKey),
       data64,
       timestamp,
       ttl
     );
     // Using timestamp as a unique identifier
-    this.sendingSwarmNodes[timestamp] = lokiSnodeAPI.getSwarmNodesForPubKey(
-      pubKey
-    );
-    if (this.sendingSwarmNodes[timestamp].length < numConnections) {
-      const freshNodes = await lokiSnodeAPI.getFreshSwarmNodes(pubKey);
-      await lokiSnodeAPI.updateSwarmNodes(pubKey, freshNodes);
-      this.sendingSwarmNodes[timestamp] = freshNodes;
+    const swarm = await lokiSnodeAPI.getSwarmNodesForPubKey(pubKey);
+    this.sendingData[timestamp] = {
+      swarm,
+      hasFreshList: false,
+    };
+    if (this.sendingData[timestamp].swarm.length < numConnections) {
+      await this.refreshSendingSwarm(pubKey, timestamp);
     }
 
     const params = {
@@ -120,56 +102,111 @@ class LokiMessageAPI {
       data: data64,
     };
     const promises = [];
+    let completedConnections = 0;
     for (let i = 0; i < numConnections; i += 1) {
-      promises.push(this.openSendConnection(params));
+      const connectionPromise = this.openSendConnection(params).finally(() => {
+        completedConnections += 1;
+        if (completedConnections >= numConnections) {
+          delete this.sendingData[timestamp];
+        }
+      });
+      promises.push(connectionPromise);
     }
 
-    let results;
+    // Taken from https://stackoverflow.com/questions/51160260/clean-way-to-wait-for-first-true-returned-by-promise
+    // The promise returned by this function will resolve true when the first promise
+    // in ps resolves true *or* it will resolve false when all of ps resolve false
+    const firstTrue = ps => {
+      const newPs = ps.map(
+        p =>
+          new Promise(
+            // eslint-disable-next-line more/no-then
+            (resolve, reject) => p.then(v => v && resolve(true), reject)
+          )
+      );
+      // eslint-disable-next-line more/no-then
+      newPs.push(Promise.all(ps).then(() => false));
+      return Promise.race(newPs);
+    };
+
+    let success;
     try {
-      results = await Promise.all(promises);
+      // eslint-disable-next-line more/no-then
+      success = await firstTrue(promises);
     } catch (e) {
       if (e instanceof textsecure.WrongDifficultyError) {
         // Force nonce recalculation
-        this.sendMessage(pubKey, data, messageTimeStamp, ttl, options);
+        // NOTE: Currently if there are snodes with conflicting difficulties we
+        // will send the message twice (or more). Won't affect client side but snodes
+        // could store the same message multiple times because they will have different
+        // timestamps (and therefore nonces)
+        await this.sendMessage(pubKey, data, messageTimeStamp, ttl, options);
         return;
       }
       throw e;
     }
-    delete this.sendingSwarmNodes[timestamp];
-    if (results.every(value => value === false)) {
+    if (!success) {
       throw new window.textsecure.EmptySwarmError(
         pubKey,
         'Ran out of swarm nodes to query'
       );
     }
-    if (results.every(value => value === true)) {
-      log.info(`Successful storage message to ${pubKey}`);
-    } else {
-      log.warn(`Partially successful storage message to ${pubKey}`);
-    }
+    log.info(`Successful storage message to ${pubKey}`);
+  }
+
+  async refreshSendingSwarm(pubKey, timestamp) {
+    const freshNodes = await lokiSnodeAPI.getFreshSwarmNodes(pubKey);
+    await lokiSnodeAPI.updateSwarmNodes(pubKey, freshNodes);
+    this.sendingData[timestamp].swarm = freshNodes;
+    this.sendingData[timestamp].hasFreshList = true;
+    return true;
   }
 
   async openSendConnection(params) {
-    while (!_.isEmpty(this.sendingSwarmNodes[params.timestamp])) {
-      const url = this.sendingSwarmNodes[params.timestamp].shift();
-      const successfulSend = await this.sendToNode(url, params);
+    while (!_.isEmpty(this.sendingData[params.timestamp].swarm)) {
+      const snode = this.sendingData[params.timestamp].swarm.shift();
+      // TODO: Revert back to using snode address instead of IP
+      const successfulSend = await this.sendToNode(
+        snode.ip,
+        snode.port,
+        snode,
+        params
+      );
       if (successfulSend) {
         return true;
       }
     }
+
+    if (!this.sendingData[params.timestamp].hasFreshList) {
+      // Ensure that there is only a single refresh per outgoing message
+      if (!this.sendingData[params.timestamp].refreshPromise) {
+        this.sendingData[
+          params.timestamp
+        ].refreshPromise = this.refreshSendingSwarm(
+          params.pubKey,
+          params.timestamp
+        );
+      }
+      await this.sendingData[params.timestamp].refreshPromise;
+      // Retry with a fresh list again
+      return this.openSendConnection(params);
+    }
     return false;
   }
 
-  async sendToNode(url, params) {
+  async sendToNode(address, port, targetNode, params) {
     let successiveFailures = 0;
-    while (successiveFailures < 3) {
+    while (successiveFailures < MAX_ACCEPTABLE_FAILURES) {
       await sleepFor(successiveFailures * 500);
       try {
-        const result = await rpc(
-          `http://${url}`,
-          this.snodeServerPort,
+        const result = await lokiRpc(
+          `https://${address}`,
+          port,
           'store',
-          params
+          params,
+          {},
+          '/storage_rpc/v1',
+          targetNode
         );
 
         // Make sure we aren't doing too much PoW
@@ -180,11 +217,17 @@ class LokiMessageAPI {
         }
         return true;
       } catch (e) {
-        log.warn('Loki send message:', e);
+        log.warn(
+          'Loki send message error:',
+          e.code,
+          e.message,
+          `from ${address}`
+        );
         if (e instanceof textsecure.WrongSwarmError) {
           const { newSwarm } = e;
           await lokiSnodeAPI.updateSwarmNodes(params.pubKey, newSwarm);
-          this.sendingSwarmNodes[params.timestamp] = newSwarm;
+          this.sendingData[params.timestamp].swarm = newSwarm;
+          this.sendingData[params.timestamp].hasFreshList = true;
           return false;
         } else if (e instanceof textsecure.WrongDifficultyError) {
           const { newDifficulty } = e;
@@ -194,60 +237,54 @@ class LokiMessageAPI {
           throw e;
         } else if (e instanceof textsecure.NotFoundError) {
           // TODO: Handle resolution error
-          successiveFailures += 1;
+        } else if (e instanceof textsecure.TimestampError) {
+          log.warn('Timestamp is invalid');
+          throw e;
         } else if (e instanceof textsecure.HTTPError) {
           // TODO: Handle working connection but error response
-          successiveFailures += 1;
-        } else {
-          successiveFailures += 1;
+          const body = await e.response.text();
+          log.warn('HTTPError body:', body);
         }
+        successiveFailures += 1;
       }
     }
-    log.error(`Failed to send to node: ${url}`);
-    await lokiSnodeAPI.unreachableNode(params.pubKey, url);
+    log.error(`Failed to send to node: ${address}`);
+    await lokiSnodeAPI.unreachableNode(params.pubKey, address);
     return false;
   }
 
-  async retrieveNextMessages(nodeUrl, nodeData, ourKey) {
-    const params = {
-      pubKey: ourKey,
-      lastHash: nodeData.lastHash || '',
-    };
-    const options = {
-      timeout: 40000,
-      headers: {
-        [LOKI_LONGPOLL_HEADER]: true,
-      },
-    };
+  async openRetrieveConnection(stopPollingPromise, callback) {
+    let stopPollingResult = false;
+    // When message_receiver restarts from onoffline/ononline events it closes
+    // http-resources, which will then resolve the stopPollingPromise with true. We then
+    // want to cancel these polling connections because new ones will be created
+    // eslint-disable-next-line more/no-then
+    stopPollingPromise.then(result => {
+      stopPollingResult = result;
+    });
 
-    const result = await rpc(
-      `http://${nodeUrl}`,
-      this.snodeServerPort,
-      'retrieve',
-      params,
-      options
-    );
-    return result.messages || [];
-  }
-
-  async openConnection(callback) {
-    const ourKey = window.textsecure.storage.user.getNumber();
-    while (!_.isEmpty(this.ourSwarmNodes)) {
-      const url = Object.keys(this.ourSwarmNodes)[0];
-      const nodeData = this.ourSwarmNodes[url];
-      delete this.ourSwarmNodes[url];
+    while (!stopPollingResult && !_.isEmpty(this.ourSwarmNodes)) {
+      const address = Object.keys(this.ourSwarmNodes)[0];
+      const nodeData = this.ourSwarmNodes[address];
+      delete this.ourSwarmNodes[address];
       let successiveFailures = 0;
-      while (successiveFailures < 3) {
+      while (
+        !stopPollingResult &&
+        successiveFailures < MAX_ACCEPTABLE_FAILURES
+      ) {
         await sleepFor(successiveFailures * 1000);
 
         try {
-          let messages = await this.retrieveNextMessages(url, nodeData, ourKey);
+          // TODO: Revert back to using snode address instead of IP
+          let messages = await this.retrieveNextMessages(nodeData.ip, nodeData);
+          // this only tracks retrieval failures
+          // won't include parsing failures...
           successiveFailures = 0;
           if (messages.length) {
             const lastMessage = _.last(messages);
-            nodeData.lashHash = lastMessage.hash;
-            lokiSnodeAPI.updateLastHash(
-              url,
+            nodeData.lastHash = lastMessage.hash;
+            await lokiSnodeAPI.updateLastHash(
+              address,
               lastMessage.hash,
               lastMessage.expiration
             );
@@ -258,10 +295,23 @@ class LokiMessageAPI {
           // Execute callback even with empty array to signal online status
           callback(messages);
         } catch (e) {
-          log.warn('Loki retrieve messages:', e);
+          log.warn(
+            'Loki retrieve messages error:',
+            e.code,
+            e.message,
+            `on ${nodeData.ip}:${nodeData.port}`
+          );
           if (e instanceof textsecure.WrongSwarmError) {
             const { newSwarm } = e;
-            await lokiSnodeAPI.updateOurSwarmNodes(newSwarm);
+            await lokiSnodeAPI.updateSwarmNodes(this.ourKey, newSwarm);
+            for (let i = 0; i < newSwarm.length; i += 1) {
+              const lastHash = await window.Signal.Data.getLastHashBySnode(
+                newSwarm[i]
+              );
+              this.ourSwarmNodes[newSwarm[i]] = {
+                lastHash,
+              };
+            }
             // Try another snode
             break;
           } else if (e instanceof textsecure.NotFoundError) {
@@ -273,20 +323,100 @@ class LokiMessageAPI {
           successiveFailures += 1;
         }
       }
+      if (successiveFailures >= MAX_ACCEPTABLE_FAILURES) {
+        log.warn(
+          `removing ${nodeData.ip}:${
+            nodeData.port
+          } from our swarm pool. We have ${
+            Object.keys(this.ourSwarmNodes).length
+          } usable swarm nodes left`
+        );
+        await lokiSnodeAPI.unreachableNode(this.ourKey, address);
+      }
     }
+    // if not stopPollingResult
+    if (_.isEmpty(this.ourSwarmNodes)) {
+      log.error(
+        'We no longer have any swarm nodes available to try in pool, closing retrieve connection'
+      );
+      return false;
+    }
+    return true;
   }
 
-  async startLongPolling(numConnections, callback) {
-    this.ourSwarmNodes = await lokiSnodeAPI.getOurSwarmNodes();
+  async retrieveNextMessages(nodeUrl, nodeData) {
+    const params = {
+      pubKey: this.ourKey,
+      lastHash: nodeData.lastHash || '',
+    };
+    const options = {
+      timeout: 40000,
+      headers: {
+        [LOKI_LONGPOLL_HEADER]: true,
+      },
+    };
+
+    const result = await lokiRpc(
+      `https://${nodeUrl}`,
+      nodeData.port,
+      'retrieve',
+      params,
+      options,
+      '/storage_rpc/v1',
+      nodeData
+    );
+    return result.messages || [];
+  }
+
+  async startLongPolling(numConnections, stopPolling, callback) {
+    log.info('startLongPolling for', numConnections, 'connections');
+    this.ourSwarmNodes = {};
+    let nodes = await lokiSnodeAPI.getSwarmNodesForPubKey(this.ourKey);
+    log.info('swarmNodes', nodes.length, 'for', this.ourKey);
+    Object.keys(nodes).forEach(j => {
+      const node = nodes[j];
+      log.info(`${j} ${node.ip}:${node.port}`);
+    });
+    if (nodes.length < numConnections) {
+      log.warn(
+        'Not enough SwarmNodes for our pubkey in local database, getting current list from blockchain'
+      );
+      nodes = await lokiSnodeAPI.refreshSwarmNodesForPubKey(this.ourKey);
+      if (nodes.length < numConnections) {
+        log.error(
+          'Could not get enough SwarmNodes for our pubkey from blockchain'
+        );
+      }
+    }
+    log.info(
+      `There are currently ${
+        nodes.length
+      } swarmNodes for pubKey in our local database`
+    );
+
+    for (let i = 0; i < nodes.length; i += 1) {
+      const lastHash = await window.Signal.Data.getLastHashBySnode(
+        nodes[i].address
+      );
+      this.ourSwarmNodes[nodes[i].address] = {
+        ...nodes[i],
+        lastHash,
+      };
+    }
 
     const promises = [];
 
-    for (let i = 0; i < numConnections; i += 1)
-      promises.push(this.openConnection(callback));
+    for (let i = 0; i < numConnections; i += 1) {
+      promises.push(this.openRetrieveConnection(stopPolling, callback));
+    }
 
-    // blocks until all snodes in our swarms have been removed from the list
+    // blocks until numConnections snodes in our swarms have been removed from the list
+    // less than numConnections being active is fine, only need to restart if none per Niels 20/02/13
     // or if there is network issues (ENOUTFOUND due to lokinet)
     await Promise.all(promises);
+    log.error('All our long poll swarm connections have been removed');
+    // should we just call ourself again?
+    // no, our caller already handles this...
   }
 }
 

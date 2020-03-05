@@ -19,6 +19,9 @@ interface Props {
   i18n: LocalizerType;
   isFromMe: boolean;
   isIncoming: boolean;
+  conversationType: 'group' | 'direct';
+  convoId: string;
+  isPublic?: boolean;
   withContentAbove: boolean;
   onClick?: () => void;
   onClose?: () => void;
@@ -214,7 +217,14 @@ export class Quote extends React.Component<Props, State> {
   }
 
   public renderText() {
-    const { i18n, text, attachment, isIncoming } = this.props;
+    const {
+      i18n,
+      text,
+      attachment,
+      isIncoming,
+      conversationType,
+      convoId,
+    } = this.props;
 
     if (text) {
       return (
@@ -225,7 +235,13 @@ export class Quote extends React.Component<Props, State> {
             isIncoming ? 'module-quote__primary__text--incoming' : null
           )}
         >
-          <MessageBody text={text} disableLinks={true} i18n={i18n} />
+          <MessageBody
+            isGroup={conversationType === 'group'}
+            convoId={convoId}
+            text={text}
+            disableLinks={true}
+            i18n={i18n}
+          />
         </div>
       );
     }
@@ -304,6 +320,7 @@ export class Quote extends React.Component<Props, State> {
             name={authorName}
             profileName={authorProfileName}
             i18n={i18n}
+            compact={true}
           />
         )}
       </div>

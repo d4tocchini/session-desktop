@@ -553,7 +553,7 @@
         "message": "Για συνημμένα αρχεία που δεν είναι εικόνες, το όριο είναι ένα αρχείο ανά μήνυμα.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Δεν είναι δυνατό να συνάψετε εικόνες μαζί με αρχεία άλλου τύπου στο ίδιο μήνυμα.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Μηνύματα",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Καλώς ορίσατε στο Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,11 +1460,11 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Διαθέσιμη ενημέρωση του Signal",
+        "message": "Διαθέσιμη ενημέρωση του Session",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Μια νέα έκδοση του Signal είναι διαθέσιμη.",
+        "message": "Μια νέα έκδοση του Session είναι διαθέσιμη.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
@@ -1476,7 +1472,7 @@
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Επανεκκίνηση του Signal",
+        "message": "Επανεκκίνηση του Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Όροι & Πολιτική Απορρήτου",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

@@ -31,6 +31,14 @@ import { getIncrement } from '../../util/timer';
 import { isFileDangerous } from '../../util/isFileDangerous';
 import { ColorType, LocalizerType } from '../../types/Util';
 import { ContextMenu, ContextMenuTrigger, MenuItem } from 'react-contextmenu';
+import { SessionIcon, SessionIconSize, SessionIconType } from '../session/icon';
+
+declare global {
+  interface Window {
+    shortenPubkey: any;
+    contextMenuShown: boolean;
+  }
+}
 
 interface Trigger {
   handleContextClick: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -48,6 +56,9 @@ interface LinkPreviewType {
 
 export interface Props {
   disableMenu?: boolean;
+  senderIsModerator?: boolean;
+  isDeletable: boolean;
+  isModerator?: boolean;
   text?: string;
   textPending?: boolean;
   id?: string;
@@ -85,16 +96,26 @@ export interface Props {
   isExpired: boolean;
   expirationLength?: number;
   expirationTimestamp?: number;
-  isP2p?: boolean;
+  convoId: string;
+  isPublic?: boolean;
+  isRss?: boolean;
+  selected: boolean;
+  // whether or not to show check boxes
+  multiSelectMode: boolean;
 
   onClickAttachment?: (attachment: AttachmentType) => void;
   onClickLinkPreview?: (url: string) => void;
   onCopyText?: () => void;
+  onSelectMessage: () => void;
+  onSelectMessageUnchecked: () => void;
   onReply?: () => void;
   onRetrySend?: () => void;
   onDownload?: (isDangerous: boolean) => void;
   onDelete?: () => void;
+  onCopyPubKey?: () => void;
+  onBanUser?: () => void;
   onShowDetail: () => void;
+  onShowUserDetails: (userPubKey: string) => void;
 }
 
 interface State {
@@ -191,6 +212,39 @@ export class Message extends React.PureComponent<Props, State> {
     });
   }
 
+  public renderMetadataBadges() {
+    const { direction, isPublic, senderIsModerator } = this.props;
+
+    const badges = [isPublic && 'Public', senderIsModerator && 'Mod'];
+
+    return badges
+      .map(badgeText => {
+        if (typeof badgeText !== 'string') {
+          return null;
+        }
+
+        return (
+          <>
+            <span className="module-message__metadata__badge--separator">
+              &nbsp;•&nbsp;
+            </span>
+            <span
+              className={classNames(
+                'module-message__metadata__badge',
+                `module-message__metadata__badge--${direction}`,
+                `module-message__metadata__badge--${badgeText.toLowerCase()}`,
+                `module-message__metadata__badge--${badgeText.toLowerCase()}--${direction}`
+              )}
+              key={badgeText}
+            >
+              {badgeText}
+            </span>
+          </>
+        );
+      })
+      .filter(i => !!i);
+  }
+
   public renderMetadata() {
     const {
       collapseMetadata,
@@ -202,7 +256,6 @@ export class Message extends React.PureComponent<Props, State> {
       text,
       textPending,
       timestamp,
-      isP2p,
     } = this.props;
 
     if (collapseMetadata) {
@@ -244,16 +297,7 @@ export class Message extends React.PureComponent<Props, State> {
             module="module-message__metadata__date"
           />
         )}
-        {isP2p ? (
-          <span
-            className={classNames(
-              'module-message__metadata__p2p',
-              `module-message__metadata__p2p--${direction}`
-            )}
-          >
-            &nbsp;•&nbsp;P2P
-          </span>
-        ) : null}
+        {this.renderMetadataBadges()}
         {expirationLength && expirationTimestamp ? (
           <ExpireTimer
             direction={direction}
@@ -268,46 +312,15 @@ export class Message extends React.PureComponent<Props, State> {
             <Spinner size="mini" direction={direction} />
           </div>
         ) : null}
+        <span className="module-message__metadata__spacer" />
         {!textPending && direction === 'outgoing' && status !== 'error' ? (
-          <div
-            className={classNames(
-              'module-message__metadata__status-icon',
-              `module-message__metadata__status-icon--${status}`,
-              withImageNoCaption
-                ? 'module-message__metadata__status-icon--with-image-no-caption'
-                : null
-            )}
-          />
+          <div className="message-read-receipt-container">
+            <SessionIcon
+              iconType={SessionIconType.Check}
+              iconSize={SessionIconSize.Small}
+            />
+          </div>
         ) : null}
-      </div>
-    );
-  }
-
-  public renderAuthor() {
-    const {
-      authorName,
-      authorPhoneNumber,
-      authorProfileName,
-      conversationType,
-      direction,
-      i18n,
-    } = this.props;
-
-    const title = authorName ? authorName : authorPhoneNumber;
-
-    if (direction !== 'incoming' || conversationType !== 'group' || !title) {
-      return null;
-    }
-
-    return (
-      <div className="module-message__author">
-        <ContactName
-          phoneNumber={authorPhoneNumber}
-          name={authorName}
-          profileName={authorProfileName}
-          module="module-message__author"
-          i18n={i18n}
-        />
       </div>
     );
   }
@@ -370,6 +383,10 @@ export class Message extends React.PureComponent<Props, State> {
     } else if (!firstAttachment.pending && isAudio(attachments)) {
       return (
         <audio
+          role="button"
+          onClick={(e: any) => {
+            e.stopPropagation();
+          }}
           controls={true}
           className={classNames(
             'module-message__audio-attachment',
@@ -553,6 +570,8 @@ export class Message extends React.PureComponent<Props, State> {
       direction,
       i18n,
       quote,
+      isPublic,
+      convoId,
     } = this.props;
 
     if (!quote) {
@@ -564,6 +583,12 @@ export class Message extends React.PureComponent<Props, State> {
     const quoteColor =
       direction === 'incoming' ? authorColor : quote.authorColor;
 
+    const shortenedPubkey = window.shortenPubkey(quote.authorPhoneNumber);
+
+    const displayedPubkey = quote.authorProfileName
+      ? shortenedPubkey
+      : quote.authorPhoneNumber;
+
     return (
       <Quote
         i18n={i18n}
@@ -571,7 +596,10 @@ export class Message extends React.PureComponent<Props, State> {
         text={quote.text}
         attachment={quote.attachment}
         isIncoming={direction === 'incoming'}
-        authorPhoneNumber={quote.authorPhoneNumber}
+        conversationType={conversationType}
+        convoId={convoId}
+        isPublic={isPublic}
+        authorPhoneNumber={displayedPubkey}
         authorProfileName={quote.authorProfileName}
         authorName={quote.authorName}
         authorColor={quoteColor}
@@ -637,10 +665,12 @@ export class Message extends React.PureComponent<Props, State> {
       authorPhoneNumber,
       authorProfileName,
       collapseMetadata,
+      senderIsModerator,
       authorColor,
       conversationType,
       direction,
       i18n,
+      onShowUserDetails,
     } = this.props;
 
     if (
@@ -662,13 +692,30 @@ export class Message extends React.PureComponent<Props, State> {
           phoneNumber={authorPhoneNumber}
           profileName={authorProfileName}
           size={36}
+          onAvatarClick={() => {
+            onShowUserDetails(authorPhoneNumber);
+          }}
         />
+        {senderIsModerator && (
+          <div className="module-avatar__icon--crown-wrapper">
+            <div className="module-avatar__icon--crown" />
+          </div>
+        )}
       </div>
     );
   }
 
   public renderText() {
-    const { text, textPending, i18n, direction, status } = this.props;
+    const {
+      text,
+      textPending,
+      i18n,
+      direction,
+      status,
+      isRss,
+      conversationType,
+      convoId,
+    } = this.props;
 
     const contents =
       direction === 'incoming' && status === 'error'
@@ -692,8 +739,11 @@ export class Message extends React.PureComponent<Props, State> {
       >
         <MessageBody
           text={contents || ''}
+          isRss={isRss}
           i18n={i18n}
           textPending={textPending}
+          isGroup={conversationType === 'group'}
+          convoId={convoId}
         />
       </div>
     );
@@ -749,10 +799,11 @@ export class Message extends React.PureComponent<Props, State> {
     const downloadButton =
       !multipleAttachments && firstAttachment && !firstAttachment.pending ? (
         <div
-          onClick={() => {
+          onClick={(e: any) => {
             if (onDownload) {
               onDownload(isDangerous);
             }
+            e.stopPropagation();
           }}
           role="button"
           className={classNames(
@@ -764,7 +815,12 @@ export class Message extends React.PureComponent<Props, State> {
 
     const replyButton = (
       <div
-        onClick={onReply}
+        onClick={(e: any) => {
+          if (onReply) {
+            onReply();
+          }
+          e.stopPropagation();
+        }}
         role="button"
         className={classNames(
           'module-message__buttons__reply',
@@ -807,14 +863,20 @@ export class Message extends React.PureComponent<Props, State> {
     const {
       attachments,
       onCopyText,
+      onSelectMessageUnchecked,
       direction,
       status,
+      isDeletable,
       onDelete,
       onDownload,
       onReply,
       onRetrySend,
       onShowDetail,
+      onCopyPubKey,
+      isPublic,
       i18n,
+      isModerator,
+      onBanUser,
     } = this.props;
 
     const showRetry = status === 'error' && direction === 'outgoing';
@@ -823,14 +885,43 @@ export class Message extends React.PureComponent<Props, State> {
     const isDangerous = isFileDangerous(fileName || '');
     const multipleAttachments = attachments && attachments.length > 1;
 
+    // Wraps a function to prevent event propagation, thus preventing
+    // message selection whenever any of the menu buttons are pressed.
+    const wrap = (f: any) => (event: Event) => {
+      event.stopPropagation();
+      if (f) {
+        f();
+      }
+    };
+
+    const onContextMenuShown = () => {
+      window.contextMenuShown = true;
+    };
+
+    const onContextMenuHidden = () => {
+      // This function will called before the click event
+      // on the message would trigger (and I was unable to
+      // prevent propagation in this case), so use a short timeout
+      setTimeout(() => {
+        window.contextMenuShown = false;
+      }, 100);
+    };
+
+    // CONTEXT MENU "Select Message" does not work
+
     return (
-      <ContextMenu id={triggerId}>
+      <ContextMenu
+        id={triggerId}
+        onShow={onContextMenuShown}
+        onHide={onContextMenuHidden}
+      >
         {!multipleAttachments && attachments && attachments[0] ? (
           <MenuItem
             attributes={{
               className: 'module-message__context__download',
             }}
-            onClick={() => {
+            onClick={(e: Event) => {
+              e.stopPropagation();
               if (onDownload) {
                 onDownload(isDangerous);
               }
@@ -839,12 +930,16 @@ export class Message extends React.PureComponent<Props, State> {
             {i18n('downloadAttachment')}
           </MenuItem>
         ) : null}
-        <MenuItem onClick={onCopyText}>{i18n('copyMessage')}</MenuItem>
+
+        <MenuItem onClick={wrap(onCopyText)}>{i18n('copyMessage')}</MenuItem>
+        <MenuItem onClick={wrap(onSelectMessageUnchecked)}>
+          {i18n('selectMessage')}
+        </MenuItem>
         <MenuItem
           attributes={{
             className: 'module-message__context__reply',
           }}
-          onClick={onReply}
+          onClick={wrap(onReply)}
         >
           {i18n('replyToMessage')}
         </MenuItem>
@@ -852,7 +947,7 @@ export class Message extends React.PureComponent<Props, State> {
           attributes={{
             className: 'module-message__context__more-info',
           }}
-          onClick={onShowDetail}
+          onClick={wrap(onShowDetail)}
         >
           {i18n('moreInfo')}
         </MenuItem>
@@ -861,19 +956,29 @@ export class Message extends React.PureComponent<Props, State> {
             attributes={{
               className: 'module-message__context__retry-send',
             }}
-            onClick={onRetrySend}
+            onClick={wrap(onRetrySend)}
           >
             {i18n('retrySend')}
           </MenuItem>
         ) : null}
-        <MenuItem
-          attributes={{
-            className: 'module-message__context__delete-message',
-          }}
-          onClick={onDelete}
-        >
-          {i18n('deleteMessage')}
-        </MenuItem>
+        {isDeletable ? (
+          <MenuItem
+            attributes={{
+              className: 'module-message__context__delete-message',
+            }}
+            onClick={wrap(onDelete)}
+          >
+            {i18n('deleteMessage')}
+          </MenuItem>
+        ) : null}
+        {isPublic ? (
+          <MenuItem onClick={wrap(onCopyPubKey)}>
+            {i18n('copyPublicKey')}
+          </MenuItem>
+        ) : null}
+        {isModerator && isPublic ? (
+          <MenuItem onClick={wrap(onBanUser)}>{i18n('banUser')}</MenuItem>
+        ) : null}
       </ContextMenu>
     );
   }
@@ -949,7 +1054,11 @@ export class Message extends React.PureComponent<Props, State> {
       authorColor,
       direction,
       id,
+      isRss,
       timestamp,
+      selected,
+      multiSelectMode,
+      conversationType,
     } = this.props;
     const { expired, expiring } = this.state;
 
@@ -965,23 +1074,59 @@ export class Message extends React.PureComponent<Props, State> {
     const width = this.getWidth();
     const isShowingImage = this.isShowingImage();
 
+    // We parse the message later, but we still need to do an early check
+    // to see if the message mentions us, so we can display the entire
+    // message differently
+    const mentions = this.props.text
+      ? this.props.text.match(window.pubkeyPattern)
+      : [];
+    const mentionMe =
+      mentions &&
+      mentions.some(m => m.slice(1) === window.lokiPublicChatAPI.ourKey);
+
+    const isIncoming = direction === 'incoming';
+    const shouldHightlight = mentionMe && isIncoming && this.props.isPublic;
+    const divClasses = ['loki-message-wrapper'];
+
+    if (shouldHightlight) {
+      //divClasses.push('message-highlighted');
+    }
+    if (selected) {
+      divClasses.push('message-selected');
+    }
+
+    if (conversationType === 'group') {
+      divClasses.push('public-chat-message-wrapper');
+    }
+
+    const enableContextMenu = !isRss && !multiSelectMode;
+
     return (
-      <div>
+      <div className={classNames(divClasses)}>
         <ContextMenuTrigger id={rightClickTriggerId}>
+          {this.renderAvatar()}
           <div
             className={classNames(
               'module-message',
               `module-message--${direction}`,
               expiring ? 'module-message--expired' : null
             )}
+            role="button"
+            onClick={() => {
+              const selection = window.getSelection();
+              if (selection && selection.type === 'Range') {
+                return;
+              }
+              this.props.onSelectMessage();
+            }}
           >
-            {this.renderError(direction === 'incoming')}
-            {this.renderMenu(direction === 'outgoing', triggerId)}
+            {this.renderError(isIncoming)}
+            {isRss ? null : this.renderMenu(!isIncoming, triggerId)}
             <div
               className={classNames(
                 'module-message__container',
                 `module-message__container--${direction}`,
-                direction === 'incoming'
+                isIncoming
                   ? `module-message__container--incoming-${authorColor}`
                   : null
               )}
@@ -997,14 +1142,53 @@ export class Message extends React.PureComponent<Props, State> {
               {this.renderText()}
               {this.renderMetadata()}
               {this.renderSendMessageButton()}
-              {this.renderAvatar()}
             </div>
-            {this.renderError(direction === 'outgoing')}
-            {this.renderMenu(direction === 'incoming', triggerId)}
-            {this.renderContextMenu(triggerId)}
-            {this.renderContextMenu(rightClickTriggerId)}
+            {this.renderError(!isIncoming)}
+            {isRss || multiSelectMode
+              ? null
+              : this.renderMenu(isIncoming, triggerId)}
+            {enableContextMenu ? this.renderContextMenu(triggerId) : null}
+            {enableContextMenu
+              ? this.renderContextMenu(rightClickTriggerId)
+              : null}
           </div>
         </ContextMenuTrigger>
+      </div>
+    );
+  }
+
+  private renderAuthor() {
+    const {
+      authorName,
+      authorPhoneNumber,
+      authorProfileName,
+      conversationType,
+      direction,
+      i18n,
+    } = this.props;
+
+    const title = authorName ? authorName : authorPhoneNumber;
+
+    if (direction !== 'incoming' || conversationType !== 'group' || !title) {
+      return null;
+    }
+
+    const shortenedPubkey = window.shortenPubkey(authorPhoneNumber);
+
+    const displayedPubkey = authorProfileName
+      ? shortenedPubkey
+      : authorPhoneNumber;
+
+    return (
+      <div className="module-message__author">
+        <ContactName
+          phoneNumber={displayedPubkey}
+          name={authorName}
+          profileName={authorProfileName}
+          module="module-message__author"
+          i18n={i18n}
+          boldProfileName={true}
+        />
       </div>
     );
   }

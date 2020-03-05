@@ -5,6 +5,7 @@ const sql = require('@journeyapps/sqlcipher');
 const { app, dialog, clipboard } = require('electron');
 const { redactAll } = require('../js/modules/privacy');
 const { remove: removeUserConfig } = require('./user_config');
+const config = require('./config');
 
 const pify = require('pify');
 const uuidv4 = require('uuid/v4');
@@ -72,6 +73,14 @@ module.exports = {
   removeContactSignedPreKeyByIdentityKey,
   removeAllContactSignedPreKeys,
 
+  createOrUpdatePairingAuthorisation,
+  removePairingAuthorisationForSecondaryPubKey,
+  getAuthorisationForSecondaryPubKey,
+  getGrantAuthorisationsForPrimaryPubKey,
+  getSecondaryDevicesFor,
+  getPrimaryDeviceFor,
+  getPairedDevicesFor,
+
   createOrUpdateItem,
   getItemById,
   getAllItems,
@@ -94,13 +103,22 @@ module.exports = {
   saveConversation,
   saveConversations,
   getConversationById,
+  savePublicServerToken,
+  getPublicServerTokenByServerUrl,
   updateConversation,
   removeConversation,
   getAllConversations,
   getPubKeysWithFriendStatus,
+  getConversationsWithFriendStatus,
+  getAllRssFeedConversations,
+  getAllPublicConversations,
+  getPublicConversationsByServer,
+  getPubkeysInPublicConversation,
   getAllConversationIds,
   getAllPrivateConversations,
   getAllGroupsInvolvingId,
+  removeAllConversations,
+  removeAllPrivateConversations,
 
   searchConversations,
   searchMessages,
@@ -117,6 +135,7 @@ module.exports = {
   removeMessage,
   getUnreadByConversation,
   getMessageBySender,
+  getMessageByServerId,
   getMessageById,
   getAllMessages,
   getAllMessageIds,
@@ -212,6 +231,15 @@ async function getSQLCipherVersion(instance) {
   }
 }
 
+async function getSQLIntegrityCheck(instance) {
+  const row = await instance.get('PRAGMA cipher_integrity_check;');
+  if (row) {
+    return row.cipher_integrity_check;
+  }
+
+  return null;
+}
+
 const HEX_KEY = /[^0-9A-Fa-f]/;
 async function setupSQLCipher(instance, { key }) {
   // If the key isn't hex then we need to derive a hex key from it
@@ -220,6 +248,9 @@ async function setupSQLCipher(instance, { key }) {
   // https://www.zetetic.net/sqlcipher/sqlcipher-api/#key
   const value = deriveKey ? `'${key}'` : `"x'${key}'"`;
   await instance.run(`PRAGMA key = ${value};`);
+
+  // https://www.zetetic.net/blog/2018/11/30/sqlcipher-400-release/#compatability-sqlcipher-4-0-0
+  await instance.run('PRAGMA cipher_migrate;');
 }
 
 async function setSQLPassword(password) {
@@ -770,6 +801,232 @@ async function updateSchema(instance) {
     // eslint-disable-next-line no-await-in-loop
     await runSchemaUpdate(schemaVersion, instance);
   }
+  await updateLokiSchema(instance);
+}
+
+const LOKI_SCHEMA_VERSIONS = [
+  updateToLokiSchemaVersion1,
+  updateToLokiSchemaVersion2,
+];
+
+async function updateToLokiSchemaVersion1(currentVersion, instance) {
+  if (currentVersion >= 1) {
+    return;
+  }
+  console.log('updateToLokiSchemaVersion1: starting...');
+  await instance.run('BEGIN TRANSACTION;');
+
+  await instance.run(
+    `ALTER TABLE messages
+     ADD COLUMN serverId INTEGER;`
+  );
+
+  await instance.run(
+    `CREATE TABLE servers(
+      serverUrl STRING PRIMARY KEY ASC,
+      token TEXT
+    );`
+  );
+
+  const initConversation = async data => {
+    // eslint-disable-next-line camelcase
+    const { id, active_at, type, name, friendRequestStatus } = data;
+    await instance.run(
+      `INSERT INTO conversations (
+      id,
+      json,
+      active_at,
+      type,
+      members,
+      name,
+      friendRequestStatus
+    ) values (
+      $id,
+      $json,
+      $active_at,
+      $type,
+      $members,
+      $name,
+      $friendRequestStatus
+    );`,
+      {
+        $id: id,
+        $json: objectToJSON(data),
+        $active_at: active_at,
+        $type: type,
+        $members: null,
+        $name: name,
+        $friendRequestStatus: friendRequestStatus,
+      }
+    );
+  };
+
+  const lokiPublicServerData = {
+    // make sure we don't have a trailing slash just in case
+    serverUrl: config.get('defaultPublicChatServer').replace(/\/*$/, ''),
+    token: null,
+  };
+  console.log('lokiPublicServerData', lokiPublicServerData);
+
+  const baseData = {
+    active_at: Date.now(),
+    friendRequestStatus: 4, // Friends
+    sealedSender: 0,
+    sessionResetStatus: 0,
+    swarmNodes: [],
+    type: 'group',
+    unlockTimestamp: null,
+    unreadCount: 0,
+    verified: 0,
+    version: 2,
+  };
+
+  const publicChatData = {
+    ...baseData,
+    id: `publicChat:1@${lokiPublicServerData.serverUrl.replace(
+      /^https?:\/\//i,
+      ''
+    )}`,
+    server: lokiPublicServerData.serverUrl,
+    name: 'Loki Public Chat',
+    channelId: '1',
+  };
+
+  const { serverUrl, token } = lokiPublicServerData;
+
+  await instance.run(
+    `INSERT INTO servers (
+    serverUrl,
+    token
+  ) values (
+    $serverUrl,
+    $token
+  );`,
+    {
+      $serverUrl: serverUrl,
+      $token: token,
+    }
+  );
+
+  const newsRssFeedData = {
+    ...baseData,
+    id: 'rss://loki.network/feed/',
+    rssFeed: 'https://loki.network/feed/',
+    closable: true,
+    name: 'Loki News',
+    profileAvatar: 'images/session/session_chat_icon.png',
+  };
+
+  const updatesRssFeedData = {
+    ...baseData,
+    id: 'rss://loki.network/category/messenger-updates/feed/',
+    rssFeed: 'https://loki.network/category/messenger-updates/feed/',
+    closable: false,
+    name: 'Session Updates',
+    profileAvatar: 'images/session/session_chat_icon.png',
+  };
+
+  const autoJoinLokiChats = false;
+
+  if (autoJoinLokiChats) {
+    await initConversation(publicChatData);
+  }
+
+  await initConversation(newsRssFeedData);
+  await initConversation(updatesRssFeedData);
+
+  await instance.run(
+    `INSERT INTO loki_schema (
+        version
+      ) values (
+        1
+      );`
+  );
+  await instance.run('COMMIT TRANSACTION;');
+  console.log('updateToLokiSchemaVersion1: success!');
+}
+
+async function updateToLokiSchemaVersion2(currentVersion, instance) {
+  if (currentVersion >= 2) {
+    return;
+  }
+  console.log('updateToLokiSchemaVersion2: starting...');
+  await instance.run('BEGIN TRANSACTION;');
+
+  await instance.run(
+    `CREATE TABLE pairingAuthorisations(
+      id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+      primaryDevicePubKey VARCHAR(255),
+      secondaryDevicePubKey VARCHAR(255),
+      isGranted BOOLEAN,
+      json TEXT,
+      UNIQUE(primaryDevicePubKey, secondaryDevicePubKey)
+    );`
+  );
+
+  await instance.run(
+    `INSERT INTO loki_schema (
+        version
+      ) values (
+        2
+      );`
+  );
+  await instance.run('COMMIT TRANSACTION;');
+  console.log('updateToLokiSchemaVersion2: success!');
+}
+
+async function updateLokiSchema(instance) {
+  const result = await instance.get(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name='loki_schema';"
+  );
+  if (!result) {
+    await createLokiSchemaTable(instance);
+  }
+  const lokiSchemaVersion = await getLokiSchemaVersion(instance);
+  console.log(
+    'updateLokiSchema:',
+    `Current loki schema version: ${lokiSchemaVersion};`,
+    `Most recent schema version: ${LOKI_SCHEMA_VERSIONS.length};`
+  );
+  for (
+    let index = 0, max = LOKI_SCHEMA_VERSIONS.length;
+    index < max;
+    index += 1
+  ) {
+    const runSchemaUpdate = LOKI_SCHEMA_VERSIONS[index];
+
+    // Yes, we really want to do this asynchronously, in order
+    // eslint-disable-next-line no-await-in-loop
+    await runSchemaUpdate(lokiSchemaVersion, instance);
+  }
+}
+
+async function getLokiSchemaVersion(instance) {
+  const result = await instance.get(
+    'SELECT MAX(version) as version FROM loki_schema;'
+  );
+  if (!result || !result.version) {
+    return 0;
+  }
+  return result.version;
+}
+
+async function createLokiSchemaTable(instance) {
+  await instance.run('BEGIN TRANSACTION;');
+  await instance.run(
+    `CREATE TABLE loki_schema(
+      id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+      version INTEGER
+    );`
+  );
+  await instance.run(
+    `INSERT INTO loki_schema (
+      version
+    ) values (
+      0
+    );`
+  );
+  await instance.run('COMMIT TRANSACTION;');
 }
 
 let db;
@@ -785,7 +1042,7 @@ function _initializePaths(configDir) {
   filePath = path.join(dbDir, 'db.sqlite');
 }
 
-async function initialize({ configDir, key, messages }) {
+async function initialize({ configDir, key, messages, passwordAttempt }) {
   if (db) {
     throw new Error('Cannot initialize more than once!');
   }
@@ -826,8 +1083,18 @@ async function initialize({ configDir, key, messages }) {
     db = promisified;
 
     // test database
+
+    const result = await getSQLIntegrityCheck(db);
+    if (result) {
+      console.log('Database integrity check failed:', result);
+      throw new Error(`Integrity check failed: ${result}`);
+    }
+
     await getMessageCount();
   } catch (error) {
+    if (passwordAttempt) {
+      throw error;
+    }
     console.log('Database startup error:', error.stack);
     const buttonIndex = dialog.showMessageBox({
       buttons: [
@@ -1072,7 +1339,7 @@ async function getContactSignedPreKeyById(id) {
 }
 async function getContactSignedPreKeyByIdentityKey(key) {
   const row = await db.get(
-    `SELECT * FROM ${CONTACT_SIGNED_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString;`,
+    `SELECT * FROM ${CONTACT_SIGNED_PRE_KEYS_TABLE} WHERE identityKeyString = $identityKeyString ORDER BY keyId DESC;`,
     {
       $identityKeyString: key,
     }
@@ -1130,6 +1397,114 @@ async function removeSignedPreKeyById(id) {
 }
 async function removeAllSignedPreKeys() {
   return removeAllFromTable(SIGNED_PRE_KEYS_TABLE);
+}
+
+const PAIRING_AUTHORISATIONS_TABLE = 'pairingAuthorisations';
+async function getAuthorisationForSecondaryPubKey(pubKey, options) {
+  const granted = options && options.granted;
+  let filter = '';
+  if (granted) {
+    filter = 'AND isGranted = 1';
+  }
+  const row = await db.get(
+    `SELECT json FROM ${PAIRING_AUTHORISATIONS_TABLE} WHERE secondaryDevicePubKey = $secondaryDevicePubKey ${filter};`,
+    {
+      $secondaryDevicePubKey: pubKey,
+    }
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return jsonToObject(row.json);
+}
+
+async function getGrantAuthorisationsForPrimaryPubKey(primaryDevicePubKey) {
+  const rows = await db.all(
+    `SELECT json FROM ${PAIRING_AUTHORISATIONS_TABLE} WHERE primaryDevicePubKey = $primaryDevicePubKey AND isGranted = 1 ORDER BY secondaryDevicePubKey ASC;`,
+    {
+      $primaryDevicePubKey: primaryDevicePubKey,
+    }
+  );
+  return map(rows, row => jsonToObject(row.json));
+}
+
+async function createOrUpdatePairingAuthorisation(data) {
+  const { primaryDevicePubKey, secondaryDevicePubKey, grantSignature } = data;
+
+  await db.run(
+    `INSERT OR REPLACE INTO ${PAIRING_AUTHORISATIONS_TABLE} (
+      primaryDevicePubKey,
+      secondaryDevicePubKey,
+      isGranted,
+      json
+    ) values (
+      $primaryDevicePubKey,
+      $secondaryDevicePubKey,
+      $isGranted,
+      $json
+    )`,
+    {
+      $primaryDevicePubKey: primaryDevicePubKey,
+      $secondaryDevicePubKey: secondaryDevicePubKey,
+      $isGranted: Boolean(grantSignature),
+      $json: objectToJSON(data),
+    }
+  );
+}
+
+async function removePairingAuthorisationForSecondaryPubKey(pubKey) {
+  await db.run(
+    `DELETE FROM ${PAIRING_AUTHORISATIONS_TABLE} WHERE secondaryDevicePubKey = $secondaryDevicePubKey;`,
+    {
+      $secondaryDevicePubKey: pubKey,
+    }
+  );
+}
+
+async function getSecondaryDevicesFor(primaryDevicePubKey) {
+  const authorisations = await getGrantAuthorisationsForPrimaryPubKey(
+    primaryDevicePubKey
+  );
+  return map(authorisations, row => row.secondaryDevicePubKey);
+}
+
+async function getPrimaryDeviceFor(secondaryDevicePubKey) {
+  const row = await db.get(
+    `SELECT primaryDevicePubKey FROM ${PAIRING_AUTHORISATIONS_TABLE} WHERE secondaryDevicePubKey = $secondaryDevicePubKey AND isGranted = 1;`,
+    {
+      $secondaryDevicePubKey: secondaryDevicePubKey,
+    }
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return row.primaryDevicePubKey;
+}
+
+// Return all the paired pubkeys for a specific pubkey (excluded),
+// irrespective of their Primary or Secondary status.
+async function getPairedDevicesFor(pubKey) {
+  let results = [];
+
+  // get primary pubkey (only works if the pubkey is a secondary pubkey)
+  const primaryPubKey = await getPrimaryDeviceFor(pubKey);
+  if (primaryPubKey) {
+    results.push(primaryPubKey);
+  }
+  // get secondary pubkeys (only works if the pubkey is a primary pubkey)
+  const secondaryPubKeys = await getSecondaryDevicesFor(
+    primaryPubKey || pubKey
+  );
+  results = results.concat(secondaryPubKeys);
+
+  // ensure the input pubkey is not in the results
+  results = results.filter(x => x !== pubKey);
+
+  return results;
 }
 
 const ITEMS_TABLE = 'items';
@@ -1298,12 +1673,13 @@ async function getSwarmNodesByPubkey(pubkey) {
   return jsonToObject(row.json).swarmNodes;
 }
 
+const CONVERSATIONS_TABLE = 'conversations';
 async function getConversationCount() {
-  const row = await db.get('SELECT count(*) from conversations;');
+  const row = await db.get(`SELECT count(*) from ${CONVERSATIONS_TABLE};`);
 
   if (!row) {
     throw new Error(
-      'getConversationCount: Unable to get count of conversations'
+      `getConversationCount: Unable to get count of ${CONVERSATIONS_TABLE}`
     );
   }
 
@@ -1323,7 +1699,7 @@ async function saveConversation(data) {
   } = data;
 
   await db.run(
-    `INSERT INTO conversations (
+    `INSERT INTO ${CONVERSATIONS_TABLE} (
     id,
     json,
 
@@ -1387,7 +1763,7 @@ async function updateConversation(data) {
   } = data;
 
   await db.run(
-    `UPDATE conversations SET
+    `UPDATE ${CONVERSATIONS_TABLE} SET
     json = $json,
 
     active_at = $active_at,
@@ -1413,7 +1789,9 @@ async function updateConversation(data) {
 
 async function removeConversation(id) {
   if (!Array.isArray(id)) {
-    await db.run('DELETE FROM conversations WHERE id = $id;', { $id: id });
+    await db.run(`DELETE FROM ${CONVERSATIONS_TABLE} WHERE id = $id;`, {
+      $id: id,
+    });
     return;
   }
 
@@ -1423,17 +1801,52 @@ async function removeConversation(id) {
 
   // Our node interface doesn't seem to allow you to replace one single ? with an array
   await db.run(
-    `DELETE FROM conversations WHERE id IN ( ${id
+    `DELETE FROM ${CONVERSATIONS_TABLE} WHERE id IN ( ${id
       .map(() => '?')
       .join(', ')} );`,
     id
   );
 }
 
+async function savePublicServerToken(data) {
+  const { serverUrl, token } = data;
+  await db.run(
+    `INSERT OR REPLACE INTO servers (
+    serverUrl,
+    token
+  ) values (
+    $serverUrl,
+    $token
+  )`,
+    {
+      $serverUrl: serverUrl,
+      $token: token,
+    }
+  );
+}
+
+async function getPublicServerTokenByServerUrl(serverUrl) {
+  const row = await db.get(
+    'SELECT * FROM servers WHERE serverUrl = $serverUrl;',
+    {
+      $serverUrl: serverUrl,
+    }
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return row.token;
+}
+
 async function getConversationById(id) {
-  const row = await db.get('SELECT * FROM conversations WHERE id = $id;', {
-    $id: id,
-  });
+  const row = await db.get(
+    `SELECT * FROM ${CONVERSATIONS_TABLE} WHERE id = $id;`,
+    {
+      $id: id,
+    }
+  );
 
   if (!row) {
     return null;
@@ -1443,14 +1856,17 @@ async function getConversationById(id) {
 }
 
 async function getAllConversations() {
-  const rows = await db.all('SELECT json FROM conversations ORDER BY id ASC;');
+  const rows = await db.all(
+    `SELECT json FROM ${CONVERSATIONS_TABLE} ORDER BY id ASC;`
+  );
   return map(rows, row => jsonToObject(row.json));
 }
 
 async function getPubKeysWithFriendStatus(status) {
   const rows = await db.all(
-    `SELECT id FROM conversations WHERE
+    `SELECT id FROM ${CONVERSATIONS_TABLE} WHERE
       friendRequestStatus = $status
+      AND type = 'private'
     ORDER BY id ASC;`,
     {
       $status: status,
@@ -1459,14 +1875,29 @@ async function getPubKeysWithFriendStatus(status) {
   return map(rows, row => row.id);
 }
 
+async function getConversationsWithFriendStatus(status) {
+  const rows = await db.all(
+    `SELECT * FROM ${CONVERSATIONS_TABLE} WHERE
+      friendRequestStatus = $status
+      AND type = 'private'
+    ORDER BY id ASC;`,
+    {
+      $status: status,
+    }
+  );
+  return map(rows, row => jsonToObject(row.json));
+}
+
 async function getAllConversationIds() {
-  const rows = await db.all('SELECT id FROM conversations ORDER BY id ASC;');
+  const rows = await db.all(
+    `SELECT id FROM ${CONVERSATIONS_TABLE} ORDER BY id ASC;`
+  );
   return map(rows, row => row.id);
 }
 
 async function getAllPrivateConversations() {
   const rows = await db.all(
-    `SELECT json FROM conversations WHERE
+    `SELECT json FROM ${CONVERSATIONS_TABLE} WHERE
       type = 'private'
      ORDER BY id ASC;`
   );
@@ -1474,9 +1905,57 @@ async function getAllPrivateConversations() {
   return map(rows, row => jsonToObject(row.json));
 }
 
-async function getAllGroupsInvolvingId(id) {
+async function getAllRssFeedConversations() {
   const rows = await db.all(
     `SELECT json FROM conversations WHERE
+      type = 'group' AND
+      id LIKE 'rss://%'
+     ORDER BY id ASC;`
+  );
+
+  return map(rows, row => jsonToObject(row.json));
+}
+
+async function getAllPublicConversations() {
+  const rows = await db.all(
+    `SELECT json FROM conversations WHERE
+      type = 'group' AND
+      id LIKE 'publicChat:%'
+     ORDER BY id ASC;`
+  );
+
+  return map(rows, row => jsonToObject(row.json));
+}
+
+async function getPublicConversationsByServer(server) {
+  const rows = await db.all(
+    `SELECT * FROM conversations WHERE
+      server = $server
+     ORDER BY id ASC;`,
+    {
+      $server: server,
+    }
+  );
+
+  return map(rows, row => jsonToObject(row.json));
+}
+
+async function getPubkeysInPublicConversation(id) {
+  const rows = await db.all(
+    `SELECT DISTINCT source FROM messages WHERE
+      conversationId = $conversationId
+     ORDER BY id ASC;`,
+    {
+      $conversationId: id,
+    }
+  );
+
+  return map(rows, row => row.source);
+}
+
+async function getAllGroupsInvolvingId(id) {
+  const rows = await db.all(
+    `SELECT json FROM ${CONVERSATIONS_TABLE} WHERE
       type = 'group' AND
       members LIKE $id
      ORDER BY id ASC;`,
@@ -1490,7 +1969,7 @@ async function getAllGroupsInvolvingId(id) {
 
 async function searchConversations(query, { limit } = {}) {
   const rows = await db.all(
-    `SELECT json FROM conversations WHERE
+    `SELECT json FROM ${CONVERSATIONS_TABLE} WHERE
       (
         id LIKE $id OR
         name LIKE $name OR
@@ -1581,6 +2060,7 @@ async function saveMessage(data, { forceSave } = {}) {
     hasFileAttachments,
     hasVisualMediaAttachments,
     id,
+    serverId,
     // eslint-disable-next-line camelcase
     received_at,
     schemaVersion,
@@ -1599,6 +2079,7 @@ async function saveMessage(data, { forceSave } = {}) {
     $id: id,
     $json: objectToJSON(data),
 
+    $serverId: serverId,
     $body: body,
     $conversationId: conversationId,
     $expirationStartTimestamp: expirationStartTimestamp,
@@ -1621,6 +2102,7 @@ async function saveMessage(data, { forceSave } = {}) {
     await db.run(
       `UPDATE messages SET
         json = $json,
+        serverId = $serverId,
         body = $body,
         conversationId = $conversationId,
         expirationStartTimestamp = $expirationStartTimestamp,
@@ -1655,6 +2137,7 @@ async function saveMessage(data, { forceSave } = {}) {
     id,
     json,
 
+    serverId,
     body,
     conversationId,
     expirationStartTimestamp,
@@ -1675,6 +2158,7 @@ async function saveMessage(data, { forceSave } = {}) {
     $id,
     $json,
 
+    $serverId,
     $body,
     $conversationId,
     $expirationStartTimestamp,
@@ -1797,6 +2281,24 @@ async function removeMessage(id) {
   );
 }
 
+async function getMessageByServerId(serverId, conversationId) {
+  const row = await db.get(
+    `SELECT * FROM messages WHERE
+      serverId = $serverId AND
+      conversationId = $conversationId;`,
+    {
+      $serverId: serverId,
+      $conversationId: conversationId,
+    }
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return jsonToObject(row.json);
+}
+
 async function getMessageById(id) {
   const row = await db.get('SELECT * FROM messages WHERE id = $id;', {
     $id: id,
@@ -1861,6 +2363,7 @@ async function getUnreadByConversation(conversationId) {
   return map(rows, row => jsonToObject(row.json));
 }
 
+// Note: Sorting here is necessary for getting the last message (with limit 1)
 async function getMessagesByConversation(
   conversationId,
   { limit = 100, receivedAt = Number.MAX_VALUE, type = '%' } = {}
@@ -1871,7 +2374,7 @@ async function getMessagesByConversation(
       conversationId = $conversationId AND
       received_at < $received_at AND
       type LIKE $type
-    ORDER BY received_at DESC
+    ORDER BY sent_at DESC
     LIMIT $limit;
     `,
     {
@@ -2213,6 +2716,14 @@ async function removeAllConfiguration() {
   });
 
   await promise;
+}
+
+async function removeAllConversations() {
+  await removeAllFromTable(CONVERSATIONS_TABLE);
+}
+
+async function removeAllPrivateConversations() {
+  await db.run(`DELETE FROM ${CONVERSATIONS_TABLE} WHERE type = 'private'`);
 }
 
 async function getMessagesNeedingUpgrade(limit, { maxVersion }) {

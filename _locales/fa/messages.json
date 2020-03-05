@@ -553,7 +553,7 @@
         "message": "When including a non-image attachment, the limit is one attachment per message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "You cannot mix non-image and image attachments in one message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "پیام ها",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "به Signal خوش‌آمدید",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "به‌روزرسانی Signal در دسترس است",
+        "message": "به‌روزرسانی Session در دسترس است",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "نسخه جدیدی از Signal در دسترس است.",
+        "message": "نسخه جدیدی از Session در دسترس است.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "برای اعمال آپدیت ها Signal را ری استارت کنید.",
+        "message": "برای اعمال آپدیت ها Session را ری استارت کنید.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "راه اندازی مجدد Signal",
+        "message": "راه اندازی مجدد Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "شرایط و سیاست های حفظ حریم خصوصی",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

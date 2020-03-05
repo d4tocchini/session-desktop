@@ -69,10 +69,20 @@
           Component: Components.GroupNotification,
           props: this.model.propsForGroupNotification,
         };
+      } else if (this.model.isSessionRestoration()) {
+        return {
+          Component: Components.ResetSessionNotification,
+          props: this.model.getPropsForResetSessionNotification(),
+        };
       } else if (this.model.propsForFriendRequest) {
         return {
           Component: Components.FriendRequest,
           props: this.model.propsForFriendRequest,
+        };
+      } else if (this.model.propsForGroupInvitation) {
+        return {
+          Component: Components.GroupInvitation,
+          props: this.model.propsForGroupInvitation,
         };
       }
 

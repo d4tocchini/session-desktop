@@ -553,7 +553,7 @@
         "message": "每条消息只能添加一个非图片的附件。",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "在一条消息中，可以同时添加一张图片和一个非图片附件。",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "信息",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "欢迎来到Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "无法更新",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Signal 有可用更新",
+        "message": "Session 有可用更新",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "有新版的 Signal 可用。",
+        "message": "有新版的 Session 可用。",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "点击“重启 Signal”来安装更新。",
+        "message": "点击“重启 Session",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "重启 Signal",
+        "message": "重启 Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "协议与隐私政策",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }

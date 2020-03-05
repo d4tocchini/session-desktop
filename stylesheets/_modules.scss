@@ -8,6 +8,17 @@
   overflow-x: hidden;
 }
 
+.create-group-button {
+  background-color: #383c46;
+  color: #ffffff;
+  margin: 4px;
+  padding: 4px;
+}
+
+.create-group-button:focus {
+  outline: 0;
+}
+
 .module-contact-name span {
   text-overflow: ellipsis;
   overflow-x: hidden;
@@ -20,8 +31,11 @@
   font-style: italic;
 }
 
-// Module: Message
+.module-contact-name.compact {
+  display: block;
+}
 
+// Module: Message
 .module-message {
   position: relative;
   display: inline-flex;
@@ -83,9 +97,21 @@
   right: 100%;
 }
 
-.module-message__buttons__download {
+.module-message__buttons__upload {
   height: 24px;
   width: 24px;
+  transform: rotate(180deg);
+  display: inline-block;
+  cursor: pointer;
+  @include color-svg('../images/download.svg', $color-light-45);
+  &:hover {
+    @include color-svg('../images/download.svg', $color-gray-90);
+  }
+}
+
+.module-message__buttons__download {
+  min-height: 24px;
+  min-width: 24px;
   display: inline-block;
   cursor: pointer;
   @include color-svg('../images/download.svg', $color-light-45);
@@ -102,8 +128,8 @@
 }
 
 .module-message__buttons__reply {
-  height: 24px;
-  width: 24px;
+  min-height: 24px;
+  min-width: 24px;
   display: inline-block;
   cursor: pointer;
   @include color-svg('../images/reply.svg', $color-light-45);
@@ -163,7 +189,7 @@
 .module-message__container {
   position: relative;
   display: inline-block;
-  border-radius: 16px;
+  border-radius: $message-container-border-radius;
   padding-right: 12px;
   padding-left: 12px;
   padding-top: 10px;
@@ -443,7 +469,7 @@
   line-height: 16px;
   text-transform: uppercase;
 }
-
+.module-conversation__user,
 .module-message__author {
   color: $color-white;
   font-size: 13px;
@@ -455,7 +481,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
+.module-conversation__user__profile-name,
 .module-message__author__profile-name {
   font-style: italic;
 }
@@ -493,8 +519,20 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin-top: 3px;
+  margin-top: 5px;
   margin-bottom: -3px;
+
+  span {
+    opacity: 0.5;
+    transition: 0.25s;
+
+    &:not(.module-message__metadata__badge--separator):hover {
+      opacity: 1;
+    }
+  }
+  .module-message__metadata__badge--separator {
+    margin-top: -2px;
+  }
 }
 
 // With an image and no caption, this section needs to be on top of the image overlay
@@ -510,23 +548,26 @@
 }
 
 .module-message__metadata__date,
-.module-message__metadata__p2p {
+.module-message__metadata__badge {
   font-size: 11px;
   line-height: 16px;
   letter-spacing: 0.3px;
   color: $color-gray-60;
   text-transform: uppercase;
-}
-.module-message__metadata__date--incoming,
-.module-message__metadata__p2p--incoming {
-  color: $color-white-08;
-}
-.module-message__metadata__date--with-image-no-caption {
-  color: $color-white;
+  user-select: none;
 }
 
-.module-message__metadata__p2p {
+.module-message__metadata__badge {
   font-weight: bold;
+}
+
+.module-message__metadata__date--incoming,
+.module-message__metadata__badge--incoming {
+  color: $color-white-08;
+}
+
+.module-message__metadata__date--with-image-no-caption {
+  color: $color-white;
 }
 
 .module-message__metadata__spacer {
@@ -597,9 +638,9 @@
 }
 
 .module-message__author-avatar {
-  position: absolute;
-  bottom: 0px;
-  right: calc(100% + 4px);
+  flex-direction: column-reverse;
+  display: inline-flex;
+  padding-right: 4px;
 }
 
 .module-message__typing-container {
@@ -1192,12 +1233,20 @@
   text-align: center;
 }
 
-.module-group-notification__change {
-  margin-top: 10px;
+.module-group-notification__change,
+.module-timer-notification__message {
+  background-color: #212121;
+  width: 90%;
+  max-width: 700px;
+  margin: 10px auto;
+  padding: 5px 20px;
+  border-radius: 4px;
+  word-break: break-word;
 }
 
 .module-group-notification__contact {
-  font-weight: 300;
+  font-family: 'SF Pro Text';
+  font-weight: bold;
 }
 
 // Module: Reset Session Notification
@@ -1391,13 +1440,10 @@
 // Module: Conversation Header
 
 .module-conversation-header {
-  padding-left: 16px;
-  padding-right: 16px;
   display: flex;
   flex-direction: row;
   align-items: center;
 
-  height: $header-height;
   color: $color-gray-90;
 
   background-color: $color-white;
@@ -1421,9 +1467,11 @@
   flex-shrink: 1;
   min-width: 0;
   display: block;
-
   text-align: center;
-  height: 48px;
+}
+
+.module-conversation-header__title-text {
+  color: darkgrey;
 }
 
 .module-conversation-header__title-flex {
@@ -1437,6 +1485,7 @@
 }
 
 .module-conversation-header__avatar {
+  cursor: pointer;
   min-width: 28px;
   user-select: none;
 }
@@ -1703,6 +1752,7 @@
 // Module: Document List Item
 
 .module-document-list-item {
+  padding-right: 10px;
   width: 100%;
   height: 72px;
 }
@@ -1889,7 +1939,7 @@
 
   position: absolute;
   right: -6px;
-  top: 6px;
+  top: -6px;
 
   font-weight: 300;
   font-size: 11px;
@@ -1962,6 +2012,7 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  margin-top: 5px;
 }
 
 .module-conversation-list-item__message__text {
@@ -2049,6 +2100,25 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+
+.module-avatar__icon--crown-wrapper {
+  position: relative;
+  bottom: -38px;
+  right: -16px;
+  height: 21px;
+  width: 21px;
+  transform: translate(25%, 25%);
+  padding: 9%;
+  background-color: $color-white;
+  border-radius: 50%;
+  filter: drop-shadow(0px 0px 4px rgba(0, 0, 0, 0.3));
+}
+
+.module-avatar__icon--crown {
+  @include color-svg('../images/crown.svg', #ffb000);
+  height: 100%;
+  width: 100%;
 }
 
 .module-avatar__icon--group {
@@ -2143,6 +2213,27 @@
 .module-avatar__icon--80 {
   height: 42px;
   width: 42px;
+}
+
+.module-avatar--300 {
+  height: 300px;
+  width: 300px;
+
+  img {
+    height: 300px;
+    width: 300px;
+  }
+}
+
+.module-avatar__label--300 {
+  width: 300px;
+  font-size: 150px;
+  line-height: 302px;
+}
+
+.module-avatar__icon--300 {
+  height: 158px;
+  width: 158px;
 }
 
 .module-avatar__icon--note-to-self {
@@ -2333,6 +2424,17 @@
   @include color-svg('../images/x-16.svg', $color-gray-60);
 }
 
+.module-main-header__search__copy-from-clipboard {
+  position: absolute;
+  right: 16px;
+  top: 5px;
+  width: 20px;
+  height: 22px;
+  opacity: 0.8;
+  cursor: pointer;
+  @include color-svg('../images/icon-paste.svg', $color-gray-60);
+}
+
 // Module: Image
 
 .module-image {
@@ -2512,7 +2614,7 @@
 
 .module-typing-animation {
   display: inline-flex;
-  flex-directin: row;
+  flex-direction: row;
   align-items: center;
 
   height: 8px;
@@ -3168,8 +3270,7 @@
 
   display: inline-flex;
   flex-direction: column;
-
-  width: 300px;
+  width: 380px;
   height: 100%;
 }
 
@@ -3240,6 +3341,8 @@
 .module-left-pane__list {
   flex-grow: 1;
   flex-shrink: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .module-left-pane__virtual-list {

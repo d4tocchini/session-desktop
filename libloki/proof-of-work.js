@@ -46,11 +46,17 @@ const pow = {
   // Compare two Uint8Arrays, return true if arr1 is > arr2
   greaterThan(arr1, arr2) {
     // Early exit if lengths are not equal. Should never happen
-    if (arr1.length !== arr2.length) return false;
+    if (arr1.length !== arr2.length) {
+      return false;
+    }
 
     for (let i = 0, len = arr1.length; i < len; i += 1) {
-      if (arr1[i] > arr2[i]) return true;
-      if (arr1[i] < arr2[i]) return false;
+      if (arr1[i] > arr2[i]) {
+        return true;
+      }
+      if (arr1[i] < arr2[i]) {
+        return false;
+      }
     }
     return false;
   },
@@ -77,9 +83,7 @@ const pow = {
 
     let nonce = new Uint8Array(NONCE_LEN);
     nonce = pow.incrementNonce(nonce, startNonce); // initial value
-    let trialValue = pow.bigIntToUint8Array(
-      JSBI.BigInt(Number.MAX_SAFE_INTEGER)
-    );
+    let trialValue = new Uint8Array([255, 255, 255, 255, 255, 255, 255, 255]);
     const initialHash = new Uint8Array(
       await crypto.subtle.digest('SHA-512', payload)
     );

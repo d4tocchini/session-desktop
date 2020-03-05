@@ -14,35 +14,6 @@
 
   const { MIME, VisualAttachment } = window.Signal.Types;
 
-  Whisper.FileSizeToast = Whisper.ToastView.extend({
-    templateName: 'file-size-modal',
-    render_attributes() {
-      return {
-        'file-size-warning': i18n('fileSizeWarning'),
-        limit: this.model.limit,
-        units: this.model.units,
-      };
-    },
-  });
-  Whisper.UnableToLoadToast = Whisper.ToastView.extend({
-    render_attributes() {
-      return { toastMessage: i18n('unableToLoadAttachment') };
-    },
-  });
-
-  Whisper.DangerousFileTypeToast = Whisper.ToastView.extend({
-    template: i18n('dangerousFileType'),
-  });
-  Whisper.OneNonImageAtATimeToast = Whisper.ToastView.extend({
-    template: i18n('oneNonImageAtATimeToast'),
-  });
-  Whisper.CannotMixImageAndNonImageAttachmentsToast = Whisper.ToastView.extend({
-    template: i18n('cannotMixImageAdnNonImageAttachments'),
-  });
-  Whisper.MaxAttachmentsToast = Whisper.ToastView.extend({
-    template: i18n('maximumAttachments'),
-  });
-
   Whisper.FileInputView = Backbone.View.extend({
     tagName: 'span',
     className: 'file-input',
@@ -217,47 +188,56 @@
     },
 
     // Show errors
-
     showLoadFailure() {
-      const toast = new Whisper.UnableToLoadToast();
-      toast.$el.insertAfter(this.$el);
-      toast.render();
+      window.pushToast({
+        title: i18n('unableToLoadAttachment'),
+        type: 'error',
+        id: 'unableToLoadAttachment',
+      });
     },
 
     showDangerousError() {
-      const toast = new Whisper.DangerousFileTypeToast();
-      toast.$el.insertAfter(this.$el);
-      toast.render();
+      window.pushToast({
+        title: i18n('dangerousFileType'),
+        type: 'error',
+        id: 'dangerousFileType',
+      });
     },
 
-    showFileSizeError({ limit, units, u }) {
-      const toast = new Whisper.FileSizeToast({
-        model: { limit, units: units[u] },
+    showFileSizeError(limit, units) {
+      window.pushToast({
+        title: i18n('fileSizeWarning'),
+        description: `Max size: ${limit} ${units}`,
+        type: 'error',
+        id: 'fileSizeWarning',
       });
-      toast.$el.insertAfter(this.$el);
-      toast.render();
     },
 
     showCannotMixError() {
-      const toast = new Whisper.CannotMixImageAndNonImageAttachmentsToast();
-      toast.$el.insertAfter(this.$el);
-      toast.render();
+      window.pushToast({
+        title: i18n('cannotMixImageAndNonImageAttachments'),
+        type: 'error',
+        id: 'cannotMixImageAndNonImageAttachments',
+      });
     },
 
     showMultipleNonImageError() {
-      const toast = new Whisper.OneNonImageAtATimeToast();
-      toast.$el.insertAfter(this.$el);
-      toast.render();
+      window.pushToast({
+        title: i18n('oneNonImageAtATimeToast'),
+        type: 'error',
+        id: 'oneNonImageAtATimeToast',
+      });
     },
 
     showMaximumAttachmentsError() {
-      const toast = new Whisper.MaxAttachmentsToast();
-      toast.$el.insertAfter(this.$el);
-      toast.render();
+      window.pushToast({
+        title: i18n('maximumAttachments'),
+        type: 'error',
+        id: 'maximumAttachments',
+      });
     },
 
     // Housekeeping
-
     addAttachment(attachment) {
       if (attachment.isVoiceNote && this.attachments.length > 0) {
         throw new Error('A voice note cannot be sent with other attachments');
@@ -359,7 +339,7 @@
           contentType,
           file,
         });
-        let limitKb = 1000000;
+        let limitKb = 10000;
         const blobType =
           file.type === 'image/gif' ? 'gif' : contentType.split('/')[0];
 
@@ -368,19 +348,19 @@
             limitKb = 6000;
             break;
           case 'gif':
-            limitKb = 25000;
+            limitKb = 10000;
             break;
           case 'audio':
-            limitKb = 100000;
+            limitKb = 10000;
             break;
           case 'video':
-            limitKb = 100000;
+            limitKb = 10000;
             break;
           default:
-            limitKb = 100000;
+            limitKb = 10000;
             break;
         }
-        if ((blob.size / 1024).toFixed(4) >= limitKb) {
+        if ((blob.file.size / 1024).toFixed(4) >= limitKb) {
           const units = ['kB', 'MB', 'GB'];
           let u = -1;
           let limit = limitKb * 1000;
@@ -388,7 +368,7 @@
             limit /= 1000;
             u += 1;
           } while (limit >= 1000 && u < units.length - 1);
-          this.showFileSizeError({ limit, units, u });
+          this.showFileSizeError(limit, units[u]);
           return;
         }
       } catch (error) {

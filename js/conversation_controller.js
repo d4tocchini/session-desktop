@@ -1,4 +1,4 @@
-/* global _, Whisper, Backbone, storage, lokiP2pAPI, textsecure, libsignal */
+/* global _, Whisper, Backbone, storage, textsecure, libsignal, log */
 
 /* eslint-disable more/no-then */
 
@@ -136,10 +136,12 @@
 
       conversation.initialPromise = create();
       conversation.initialPromise.then(() => {
-        Promise.all([
-          conversation.updateProfileAvatar(),
-          window.lokiSnodeAPI.refreshSwarmNodesForPubKey(id),
-        ]);
+        if (!conversation.isPublic() && !conversation.isRss()) {
+          Promise.all([
+            conversation.updateProfileAvatar(),
+            window.lokiSnodeAPI.refreshSwarmNodesForPubKey(id),
+          ]);
+        }
       });
 
       return conversation;
@@ -159,18 +161,32 @@
       if (!conversation) {
         return;
       }
+
+      // Close group leaving
+      if (conversation.isClosedGroup()) {
+        await conversation.leaveGroup();
+      } else if (conversation.isPublic()) {
+        const channelAPI = await conversation.getPublicSendData();
+        if (channelAPI === null) {
+          log.warn(`Could not get API for public conversation ${id}`);
+        } else {
+          channelAPI.serverAPI.partChannel(channelAPI.channelId);
+        }
+      } else if (conversation.isPrivate()) {
+        const deviceIds = await textsecure.storage.protocol.getDeviceIds(id);
+        await Promise.all(
+          deviceIds.map(deviceId => {
+            const address = new libsignal.SignalProtocolAddress(id, deviceId);
+            const sessionCipher = new libsignal.SessionCipher(
+              textsecure.storage.protocol,
+              address
+            );
+            return sessionCipher.deleteAllSessionsForDevice();
+          })
+        );
+      }
+
       await conversation.destroyMessages();
-      const deviceIds = await textsecure.storage.protocol.getDeviceIds(id);
-      await Promise.all(
-        deviceIds.map(deviceId => {
-          const address = new libsignal.SignalProtocolAddress(id, deviceId);
-          const sessionCipher = new libsignal.SessionCipher(
-            textsecure.storage.protocol,
-            address
-          );
-          return sessionCipher.deleteAllSessionsForDevice();
-        })
-      );
       await window.Signal.Data.removeConversation(id, {
         Conversation: Whisper.Conversation,
       });
@@ -218,14 +234,6 @@
     async load() {
       window.log.info('ConversationController: starting initial fetch');
 
-      // We setup online and offline listeners here because we want
-      //  to minimize the amount of listeners we have to avoid memory leaks
-      if (!this.p2pListenersSet) {
-        lokiP2pAPI.on('online', this._handleOnline.bind(this));
-        lokiP2pAPI.on('offline', this._handleOffline.bind(this));
-        this.p2pListenersSet = true;
-      }
-
       if (conversations.length) {
         throw new Error('ConversationController: Already loaded!');
       }
@@ -246,7 +254,7 @@
             }
 
             promises.concat([
-              conversation.updateProfile(),
+              conversation.updateProfileName(),
               conversation.updateProfileAvatar(),
               conversation.resetPendingSend(),
               conversation.setFriendRequestExpiryTimeout(),
@@ -273,13 +281,13 @@
 
       return this._initialPromise;
     },
-    _handleOnline(pubKey) {
+    _handleOnline: pubKey => {
       try {
         const conversation = this.get(pubKey);
         conversation.set({ isOnline: true });
       } catch (e) {} // eslint-disable-line
     },
-    _handleOffline(pubKey) {
+    _handleOffline: pubKey => {
       try {
         const conversation = this.get(pubKey);
         conversation.set({ isOnline: false });

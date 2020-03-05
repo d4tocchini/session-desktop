@@ -1,6 +1,9 @@
 /* global chai, Whisper, _, Backbone */
 
-mocha.setup('bdd');
+mocha
+  .setup('bdd')
+  .fullTrace()
+  .timeout(10000);
 window.assert = chai.assert;
 window.PROTO_ROOT = '../protos';
 
@@ -82,6 +85,5 @@ window.clearDatabase = async () => {
   await window.storage.fetch();
 };
 
-window.lokiP2pAPI = new window.LokiP2pAPI('ourKey');
 window.Whisper = window.Whisper || {};
 window.Whisper.events = _.clone(Backbone.Events);

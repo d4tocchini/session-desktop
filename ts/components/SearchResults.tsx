@@ -7,7 +7,6 @@ import {
   MessageSearchResult,
   PropsData as MessageSearchResultPropsType,
 } from './MessageSearchResult';
-import { StartNewConversation } from './StartNewConversation';
 
 import { LocalizerType } from '../types/Util';
 
@@ -25,21 +24,11 @@ export type PropsData = {
 type PropsHousekeeping = {
   i18n: LocalizerType;
   openConversation: (id: string, messageId?: string) => void;
-  startNewConversation: (
-    query: string,
-    options: { regionCode: string }
-  ) => void;
 };
 
 type Props = PropsData & PropsHousekeeping;
 
 export class SearchResults extends React.Component<Props> {
-  public handleStartNewConversation = () => {
-    const { regionCode, searchTerm, startNewConversation } = this.props;
-
-    startNewConversation(searchTerm, { regionCode });
-  };
-
   public render() {
     const {
       conversations,
@@ -71,13 +60,6 @@ export class SearchResults extends React.Component<Props> {
             {i18n('noSearchResults', [searchTerm])}
           </div>
         ) : null}
-        {showStartNewConversation ? (
-          <StartNewConversation
-            phoneNumber={searchTerm}
-            i18n={i18n}
-            onClick={this.handleStartNewConversation}
-          />
-        ) : null}
         {haveConversations ? (
           <div className="module-search-results__conversations">
             <div className="module-search-results__conversations-header">
@@ -96,14 +78,12 @@ export class SearchResults extends React.Component<Props> {
         {haveFriends
           ? this.renderContacts(i18n('friendsHeader'), friends, true)
           : null}
-        {haveContacts
-          ? this.renderContacts(i18n('contactsHeader'), contacts)
-          : null}
+
         {haveMessages ? (
           <div className="module-search-results__messages">
             {hideMessagesHeader ? null : (
               <div className="module-search-results__messages-header">
-                {i18n('messagesHeader')}
+                {i18n('messages')}
               </div>
             )}
             {messages.map(message => (
@@ -119,7 +99,6 @@ export class SearchResults extends React.Component<Props> {
       </div>
     );
   }
-
   private renderContacts(
     header: string,
     items: Array<ConversationListItemPropsType>,
@@ -133,7 +112,7 @@ export class SearchResults extends React.Component<Props> {
         {items.map(contact => (
           <ConversationListItem
             key={contact.phoneNumber}
-            isFriendItem={friends}
+            isFriend={friends}
             {...contact}
             onClick={openConversation}
             i18n={i18n}

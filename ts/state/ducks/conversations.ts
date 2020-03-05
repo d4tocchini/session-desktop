@@ -40,15 +40,21 @@ export type ConversationType = {
   lastMessage?: {
     status: 'error' | 'sending' | 'sent' | 'delivered' | 'read';
     text: string;
+    isRss: boolean;
   };
   phoneNumber: string;
   type: 'direct' | 'group';
   isMe: boolean;
+  isPublic?: boolean;
+  isClosable?: boolean;
   lastUpdated: number;
   unreadCount: number;
+  mentionedUs: boolean;
   isSelected: boolean;
   isTyping: boolean;
   isFriend?: boolean;
+  hasReceivedFriendRequest?: boolean;
+  hasSentFriendRequest?: boolean;
 };
 export type ConversationLookupType = {
   [key: string]: ConversationType;

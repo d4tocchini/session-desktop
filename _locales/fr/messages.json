@@ -553,7 +553,7 @@
         "message": "Pour un fichier joint qui n’est pas une image, la limite est un fichier joint par message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
-    "cannotMixImageAdnNonImageAttachments": {
+    "cannotMixImageAndNonImageAttachments": {
         "message": "Vous ne pouvez pas joindre à la fois image et non image dans le même message.",
         "description": "An error popup when the user has attempted to add an attachment"
     },
@@ -673,7 +673,7 @@
         "message": "Messages",
         "description": "Shown to separate the types of search results"
     },
-    "welcomeToSignal": {
+    "welcomeToSession": {
         "message": "Bienvenue sur Signal",
         "description": ""
     },
@@ -796,10 +796,6 @@
     "cannotUpdate": {
         "message": "Cannot Update",
         "description": "Shown as the title of our update error dialogs on windows"
-    },
-    "cannotUpdateDetail": {
-        "message": "Signal Desktop failed to update, but there is a new version available. Please go to https://signal.org/download and install the new version manually, then either contact support or file a bug about this problem.",
-        "description": "Shown if a general error happened while trying to install update package"
     },
     "readOnlyVolume": {
         "message": "Signal Desktop is likely in a macOS quarantine, and will not be able to auto-update. Please try moving Signal.app to /Applications with Finder.",
@@ -1464,19 +1460,19 @@
         "description": ""
     },
     "autoUpdateNewVersionTitle": {
-        "message": "Une mise à jour de Signal est proposée",
+        "message": "Une mise à jour de Session est proposée",
         "description": ""
     },
     "autoUpdateNewVersionMessage": {
-        "message": "Une nouvelle version de Signal est proposée.",
+        "message": "Une nouvelle version de Session est proposée.",
         "description": ""
     },
     "autoUpdateNewVersionInstructions": {
-        "message": "Appuyez sur « Redémarrer Signal » pour appliquer les mises à jour.",
+        "message": "Appuyez sur « Redémarrer Session » pour appliquer les mises à jour.",
         "description": ""
     },
     "autoUpdateRestartButtonLabel": {
-        "message": "Redémarrer Signal",
+        "message": "Redémarrer Session",
         "description": ""
     },
     "autoUpdateLaterButtonLabel": {
@@ -1536,9 +1532,5 @@
                 "example": "Alice, Bob"
             }
         }
-    },
-    "privacyPolicy": {
-        "message": "Conditions générales d’utilisation et politique de confidentialité",
-        "description": "Shown in the about box for the link to https://signal.org/legal"
     }
 }
