@@ -142,10 +142,14 @@ export class MessageDetail extends React.Component<Props> {
   public render() {
     const { errors, message, receivedAt, sentAt, i18n } = this.props;
 
+    // ugh, ts...
+    // @ts-ignore
+    const msg_attrs = {i18n, ...message};
+
     return (
       <div className="module-message-detail">
         <div className="module-message-detail__message-container">
-          <Message i18n={i18n} {...message} />
+          <Message {...msg_attrs} />
         </div>
         <table className="module-message-detail__info">
           <tbody>

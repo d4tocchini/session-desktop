@@ -61,11 +61,11 @@ exports.autoOrientJPEG = async attachment => {
     return attachment;
   }
 
-  const dataBlob = await arrayBufferToBlob(
+  const dataBlob = arrayBufferToBlob(
     attachment.data,
     attachment.contentType
   );
-  const newDataBlob = await dataURLToBlob(await autoOrientImage(dataBlob));
+  const newDataBlob = dataURLToBlob(await autoOrientImage(dataBlob));
   const newDataArrayBuffer = await blobToArrayBuffer(newDataBlob);
 
   // IMPORTANT: We overwrite the existing `data` `ArrayBuffer` losing the original
