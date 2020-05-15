@@ -29,7 +29,7 @@ const {
 
 // FIXME Hardcoding appId to prevent build failrues on release.
 // const appUserModelId = packageJson.build.appId;
-const appUserModelId = 'com.loki-project.messenger-desktop';
+const appUserModelId = 'd4.loki-project.messenger-desktop';
 console.log('Set Windows Application User Model ID (AUMID)', {
   appUserModelId,
 });
@@ -67,7 +67,7 @@ const appInstance = config.util.getEnv('NODE_APP_INSTANCE') || 0;
 const attachments = require('./app/attachments');
 const attachmentChannel = require('./app/attachment_channel');
 
-const updater = require('./ts/updater/index');
+// const updater = require('./ts/updater/index');
 
 const createTrayIcon = require('./app/tray_icon');
 const ephemeralConfig = require('./app/ephemeral_config');
@@ -441,31 +441,31 @@ ipc.on('show-window', () => {
 
 let isReadyForUpdates = false;
 async function readyForUpdates() {
-  if (isReadyForUpdates) {
-    return;
-  }
+  // if (isReadyForUpdates) {
+  //   return;
+  // }
 
-  isReadyForUpdates = true;
+  // isReadyForUpdates = true;
 
-  // disable for now
-  /*
-  // First, install requested sticker pack
-  const incomingUrl = getIncomingUrl(process.argv);
-  if (incomingUrl) {
-    handleSgnlLink(incomingUrl);
-  }
-  */
+  // // disable for now
+  // /*
+  // // First, install requested sticker pack
+  // const incomingUrl = getIncomingUrl(process.argv);
+  // if (incomingUrl) {
+  //   handleSgnlLink(incomingUrl);
+  // }
+  // */
 
-  // Second, start checking for app updates
-  try {
-    await updater.start(getMainWindow, userConfig, locale.messages, logger);
-  } catch (error) {
-    const log = logger || console;
-    log.error(
-      'Error starting update checks:',
-      error && error.stack ? error.stack : error
-    );
-  }
+  // // Second, start checking for app updates
+  // try {
+  //   await updater.start(getMainWindow, userConfig, locale.messages, logger);
+  // } catch (error) {
+  //   const log = logger || console;
+  //   log.error(
+  //     'Error starting update checks:',
+  //     error && error.stack ? error.stack : error
+  //   );
+  // }
 }
 ipc.once('ready-for-updates', readyForUpdates);
 

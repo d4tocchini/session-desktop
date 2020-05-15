@@ -1,6 +1,6 @@
 import { get as getFromConfig } from 'config';
-import { BrowserWindow } from 'electron';
-import { start as startUpdater, stop as stopUpdater } from './updater';
+// import { BrowserWindow } from 'electron';
+// import { start as startUpdater, stop as stopUpdater } from './updater';
 import { LoggerType, MessagesType } from './common';
 import { UserConfig } from '../../app/user_config';
 
@@ -8,7 +8,7 @@ let initialized = false;
 let config: UserConfig;
 
 export async function start(
-  getMainWindow: () => BrowserWindow,
+  // getMainWindow: () => BrowserWindow,
   userConfig: UserConfig,
   messages?: MessagesType,
   logger?: LoggerType
@@ -41,12 +41,12 @@ export async function start(
     return;
   }
 
-  await startUpdater(getMainWindow, messages, logger);
+  // await startUpdater(getMainWindow, messages, logger);
 }
 
 export function stop() {
   if (initialized) {
-    stopUpdater();
+    // stopUpdater();
     initialized = false;
   }
 }
