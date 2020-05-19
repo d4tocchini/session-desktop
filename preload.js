@@ -359,7 +359,7 @@ window.emojiData = require('emoji-datasource');
 window.EmojiPanel = require('emoji-panel');
 window.filesize = require('filesize');
 window.loadImage = require('blueimp-load-image');
-window.getGuid = require('uuid/v4');
+window.getGuid = require('uuid').v4;
 window.profileImages = require('./app/profile_images');
 
 window.React = require('react');

@@ -8,7 +8,7 @@ const { remove: removeUserConfig } = require('./user_config');
 const config = require('./config');
 
 const pify = require('pify');
-const uuidv4 = require('uuid/v4');
+const uuidv4 = require('uuid').v4;
 const {
   map,
   isString,

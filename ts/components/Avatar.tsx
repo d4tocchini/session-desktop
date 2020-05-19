@@ -40,6 +40,7 @@ export class Avatar extends React.PureComponent<Props, State> {
   }
 
   public handleImageError() {
+    // D4: TODO:
     // tslint:disable-next-line no-console
     console.log('Avatar: Image failed to load; failing over to placeholder');
     this.setState({

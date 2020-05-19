@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+require("electron-conf")
 
 const path = require('path');
 const url = require('url');
